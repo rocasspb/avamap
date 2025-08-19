@@ -1,11 +1,11 @@
 // --- Global Variables ---
 let map;
 let slopeLayer;
-let MAPI_KEY = ''; // To be set by the user
+let MAPI_KEY = config.MAPTILER_API_KEY; // Get from config file
 let currentMode = 'slope'; // 'slope', 'elevation', or 'aspect'
 
 // --- Map Initialization ---
-map = L.map('map').setView([47.2692, 11.4041], 12);
+map = L.map('map').setView(config.DEFAULT_CENTER, config.DEFAULT_ZOOM);
 const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
@@ -16,11 +16,11 @@ function getElevation(r, g, b) {
 }
 
 function getColorForSlope(slope) {
-    if (slope > 45) return 'rgba(204, 50, 50, 0.7)';
-    if (slope > 30) return 'rgba(245, 141, 17, 0.7)';
-    if (slope > 20) return 'rgba(231, 180, 22, 0.7)';
-    if (slope > 10) return 'rgba(153, 193, 64, 0.7)';
-    if (slope > 0)  return 'rgba(45, 201, 55, 0.7)';
+    if (slope > config.SLOPE_THRESHOLDS.EXTREME) return 'rgba(204, 50, 50, 0.7)';
+    if (slope > config.SLOPE_THRESHOLDS.VERY_STEEP) return 'rgba(245, 141, 17, 0.7)';
+    if (slope > config.SLOPE_THRESHOLDS.STEEP) return 'rgba(231, 180, 22, 0.7)';
+    if (slope > config.SLOPE_THRESHOLDS.MODERATE) return 'rgba(153, 193, 64, 0.7)';
+    if (slope > config.SLOPE_THRESHOLDS.FLAT)  return 'rgba(45, 201, 55, 0.7)';
     return 'rgba(0,0,0,0)';
 }
 
@@ -99,7 +99,7 @@ function initializeSlopeLayer() {
                                 const elev_dx = getElevation(data[i_dx], data[i_dx+1], data[i_dx+2]);
                                 const elev_dy = getElevation(data[i_dy], data[i_dy+1], data[i_dy+2]);
                                 const elev = getElevation(data[i], data[i+1], data[i+2]);
-                                const resolution = (40075016.7 / (256 * Math.pow(2, coords.z))) * Math.cos(map.getCenter().lat * Math.PI / 180);
+                                const resolution = (40075016.7 / (config.TILE_SIZE * Math.pow(2, coords.z))) * Math.cos(map.getCenter().lat * Math.PI / 180);
                                 const dz_dx = (elev_dx - elev);
                                 const dz_dy = (elev_dy - elev);
                                 
@@ -130,20 +130,20 @@ function initializeSlopeLayer() {
                                 }
                             }
                         }
-                    } else { // elevation
-                        for (let i = 0; i < data.length; i += 4) {
-                            const elev = getElevation(data[i], data[i + 1], data[i + 2]);
-                            if (elev > 3000) {
-                                outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
-                            } else if (elev > 2500) {
-                                outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
-                            } else if (elev > 2000) {
-                                outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
-                            } else {
-                                outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
+                                                } else { // elevation
+                                for (let i = 0; i < data.length; i += 4) {
+                                    const elev = getElevation(data[i], data[i + 1], data[i + 2]);
+                                    if (elev > config.ELEVATION_THRESHOLDS.HIGH) {
+                                        outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
+                                    } else if (elev > config.ELEVATION_THRESHOLDS.MEDIUM) {
+                                        outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
+                                    } else if (elev > config.ELEVATION_THRESHOLDS.LOW) {
+                                        outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
+                                    } else {
+                                        outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
+                                    }
+                                }
                             }
-                        }
-                    }
                     ctx.putImageData(outputImageData, 0, 0);
                     done(null, tile);
                 } catch (e) {
@@ -161,8 +161,11 @@ function initializeSlopeLayer() {
         }
     });
 
-    slopeLayer = new SlopeLayer({ maxNativeZoom: 14, maxZoom: 18 });
-    slopeLayer.setOpacity(document.getElementById('opacity').value);
+                slopeLayer = new SlopeLayer({ 
+                maxNativeZoom: config.TERRAIN_MAX_ZOOM, 
+                maxZoom: 18 
+            });
+            slopeLayer.setOpacity(document.getElementById('opacity').value || config.DEFAULT_OPACITY);
     map.addLayer(slopeLayer);
 
     document.getElementById('mode-selector').classList.remove('hidden');
@@ -184,7 +187,7 @@ function handleMapClick(e) {
     if (!MAPI_KEY) return;
     const { lat, lng } = e.latlng;
     const zoom = 14; 
-    const TILE_SIZE = 256;
+    const TILE_SIZE = config.TILE_SIZE;
     const popup = L.popup().setLatLng(e.latlng).setContent('Calculating...').openOn(map);
     const n = Math.pow(2, zoom);
     const tileX = Math.floor(n * ((lng + 180) / 360));
@@ -239,44 +242,79 @@ function handleMapClick(e) {
 
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function() {
-    // API Key button
-    document.getElementById('setApiKey').addEventListener('click', () => {
-        const key = document.getElementById('apiKey').value;
-        const errorEl = document.getElementById('apiKeyError');
-        if (key && key.trim() !== '') {
-            MAPI_KEY = key;
-            errorEl.classList.add('hidden');
-            const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
-            apiKeyInputWrapper.style.display = 'none';
-            const apiKeySection = document.getElementById('apiKeySection');
-            let successWrapper = apiKeySection.querySelector('.success-wrapper');
-            if (!successWrapper) {
-                successWrapper = document.createElement('div');
-                successWrapper.className = 'success-wrapper';
-                successWrapper.innerHTML = `
-                    <p class="text-sm text-green-600 font-semibold">API Key set. Applying overlay...</p>
-                    <button id="changeApiKey" class="mt-2 text-sm text-indigo-600 hover:underline focus:outline-none">Change Key</button>
-                `;
-                apiKeyInputWrapper.insertAdjacentElement('afterend', successWrapper);
-                successWrapper.querySelector('#changeApiKey').addEventListener('click', () => {
-                    if (slopeLayer) map.removeLayer(slopeLayer);
-                    successWrapper.remove();
-                    apiKeyInputWrapper.style.display = 'block';
-                    document.getElementById('apiKey').value = '';
-                    errorEl.classList.add('hidden');
-                    document.getElementById('mode-selector').classList.add('hidden');
-                    document.getElementById('slope-legend').classList.add('hidden');
-                    document.getElementById('elevation-legend').classList.add('hidden');
-                    document.getElementById('aspect-legend').classList.add('hidden');
-                    document.getElementById('opacity-control').classList.add('hidden');
-                });
-            }
-            initializeSlopeLayer();
-        } else {
-            errorEl.textContent = 'Please enter a valid MapTiler API key.';
-            errorEl.classList.remove('hidden');
+    // Check if API key is available from config
+    if (MAPI_KEY && MAPI_KEY !== 'YOUR_API_KEY_HERE') {
+        // API key is available, hide the input section and initialize the layer
+        const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
+        const apiKeySection = document.getElementById('apiKeySection');
+        
+        apiKeyInputWrapper.style.display = 'none';
+        
+        // Create success message
+        let successWrapper = apiKeySection.querySelector('.success-wrapper');
+        if (!successWrapper) {
+            successWrapper = document.createElement('div');
+            successWrapper.className = 'success-wrapper';
+            successWrapper.innerHTML = `
+                <p class="text-sm text-green-600 font-semibold">API Key loaded from config. Applying overlay...</p>
+                <button id="changeApiKey" class="mt-2 text-sm text-indigo-600 hover:underline focus:outline-none">Change Key</button>
+            `;
+            apiKeyInputWrapper.insertAdjacentElement('afterend', successWrapper);
+            successWrapper.querySelector('#changeApiKey').addEventListener('click', () => {
+                if (slopeLayer) map.removeLayer(slopeLayer);
+                successWrapper.remove();
+                apiKeyInputWrapper.style.display = 'block';
+                document.getElementById('apiKey').value = '';
+                document.getElementById('mode-selector').classList.add('hidden');
+                document.getElementById('slope-legend').classList.add('hidden');
+                document.getElementById('elevation-legend').classList.add('hidden');
+                document.getElementById('aspect-legend').classList.add('hidden');
+                document.getElementById('opacity-control').classList.add('hidden');
+            });
         }
-    });
+        
+        // Initialize the slope layer automatically
+        initializeSlopeLayer();
+    } else {
+        // No API key in config, show the input section
+        document.getElementById('setApiKey').addEventListener('click', () => {
+            const key = document.getElementById('apiKey').value;
+            const errorEl = document.getElementById('apiKeyError');
+            if (key && key.trim() !== '') {
+                MAPI_KEY = key;
+                errorEl.classList.add('hidden');
+                const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
+                apiKeyInputWrapper.style.display = 'none';
+                const apiKeySection = document.getElementById('apiKeySection');
+                let successWrapper = apiKeySection.querySelector('.success-wrapper');
+                if (!successWrapper) {
+                    successWrapper = document.createElement('div');
+                    successWrapper.className = 'success-wrapper';
+                    successWrapper.innerHTML = `
+                        <p class="text-sm text-green-600 font-semibold">API Key set. Applying overlay...</p>
+                        <button id="changeApiKey" class="mt-2 text-sm text-indigo-600 hover:underline focus:outline-none">Change Key</button>
+                    `;
+                    apiKeyInputWrapper.insertAdjacentElement('afterend', successWrapper);
+                    successWrapper.querySelector('#changeApiKey').addEventListener('click', () => {
+                        if (slopeLayer) map.removeLayer(slopeLayer);
+                        successWrapper.remove();
+                        apiKeyInputWrapper.style.display = 'block';
+                        document.getElementById('apiKey').value = '';
+                        errorEl.classList.add('hidden');
+                        document.getElementById('mode-selector').classList.add('hidden');
+                        document.getElementById('slope-legend').classList.add('hidden');
+                        document.getElementById('elevation-legend').classList.add('hidden');
+                        document.getElementById('aspect-legend').classList.add('hidden');
+                        document.getElementById('opacity-control').classList.add('hidden');
+                    });
+                }
+                initializeSlopeLayer();
+            } else {
+                errorEl.textContent = 'Please enter a valid MapTiler API key.';
+                errorEl.classList.remove('hidden');
+            }
+        });
+    }
 
     // Opacity control
     document.getElementById('opacity').addEventListener('input', (e) => {

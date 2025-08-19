@@ -129,6 +129,40 @@
      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
      crossorigin=""></script>
 
+    <!-- Configuration -->
+    <script src="config.js"></script>
+    
+    <!-- Set default values from config -->
+    <script>
+        // Set default opacity from config after config loads
+        document.addEventListener('DOMContentLoaded', function() {
+            if (window.config && document.getElementById('opacity')) {
+                document.getElementById('opacity').value = config.DEFAULT_OPACITY;
+            }
+            
+            // Hide API key section if key is available from config
+            if (window.config && config.MAPTILER_API_KEY && config.MAPTILER_API_KEY !== 'YOUR_API_KEY_HERE') {
+                const apiKeyInputWrapper = document.getElementById('apiKeyInputWrapper');
+                const apiKeySection = document.getElementById('apiKeySection');
+                
+                if (apiKeyInputWrapper) {
+                    apiKeyInputWrapper.style.display = 'none';
+                }
+                
+                // Add success message
+                if (apiKeySection && !apiKeySection.querySelector('.success-wrapper')) {
+                    const successWrapper = document.createElement('div');
+                    successWrapper.className = 'success-wrapper';
+                    successWrapper.innerHTML = `
+                        <p class="text-sm text-green-600 font-semibold">✅ API Key loaded from config file</p>
+                        <p class="text-xs text-gray-500 mt-1">The slope layer will be initialized automatically</p>
+                    `;
+                    apiKeyInputWrapper.insertAdjacentElement('afterend', successWrapper);
+                }
+            }
+        });
+    </script>
+    
     <!-- Custom JavaScript -->
     <script src="avamap.js"></script>
 </body>

@@ -102,6 +102,7 @@ temp/
 *.key
 api-keys.txt
 secrets.txt
+config.js
 
 # Build outputs
 build/
