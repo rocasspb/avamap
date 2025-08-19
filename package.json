@@ -1,0 +1,27 @@
+{
+  "name": "slope-map-generator",
+  "version": "1.0.0",
+  "description": "A web-based tool that generates slope maps by analyzing elevation data and calculating terrain steepness in real-time",
+  "main": "avamap.html",
+  "scripts": {
+    "start": "open avamap.html",
+    "launch": "./launch.sh"
+  },
+  "keywords": [
+    "slope",
+    "map",
+    "elevation",
+    "terrain",
+    "leaflet",
+    "geospatial"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {},
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+} 

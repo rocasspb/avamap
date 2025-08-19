@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avalanche Map Generator</title>
+    
+    <!-- Leaflet CSS for map styling -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    
+    <!-- Tailwind CSS for UI styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        /* Set the map container to fill the viewport */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        #map { 
+            height: 100vh; 
+            width: 100vw;
+            z-index: 1; /* Ensure map is behind UI elements */
+        }
+        /* Custom Leaflet popup style */
+        .leaflet-popup-content-wrapper {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .leaflet-popup-content {
+            margin: 15px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .leaflet-popup-tip {
+            background: #ffffff;
+        }
+        /* Mode Selector Button Styles */
+        .mode-btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .mode-btn.active {
+            background-color: #4f46e5;
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- The main container for the map -->
+    <div id="map"></div>
+
+    <!-- UI Panel for instructions and legend -->
+    <div id="ui-panel" class="absolute top-4 left-4 z-10 bg-white p-4 rounded-lg shadow-lg max-w-sm w-full md:w-auto transition-transform duration-300 ease-in-out">
+        <h1 class="text-xl font-bold text-gray-800 mb-2">Avalanche Map Visualizer</h1>
+        <p class="text-sm text-gray-600 mb-4">Click any point on the map to get its exact slope gradient and aspect.</p>
+        
+        <!-- API Key Input -->
+        <div id="apiKeySection">
+            <div id="apiKeyInputWrapper">
+                <label for="apiKey" class="block text-sm font-medium text-gray-700">MapTiler API Key:</label>
+                <input type="text" id="apiKey" placeholder="Get a free key from MapTiler.com" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                <button id="setApiKey" class="mt-2 w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 text-sm">Apply Key</button>
+            </div>
+            <p id="apiKeyError" class="text-xs text-red-600 mt-2 hidden"></p>
+            <p class="text-xs text-gray-500 mt-2">An API key is required to fetch elevation data. A free key is sufficient.</p>
+        </div>
+
+        <!-- Display Mode Switch -->
+        <div id="mode-selector" class="mt-4 hidden">
+            <div class="flex rounded-md shadow-sm" role="group">
+                <button type="button" id="mode-slope" class="mode-btn active py-2 px-4 text-sm font-medium text-gray-900 bg-white rounded-l-lg border border-gray-200 hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-indigo-500">Slope</button>
+                <button type="button" id="mode-elevation" class="mode-btn py-2 px-4 text-sm font-medium text-gray-900 bg-white border-t border-b border-gray-200 hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-indigo-500">Elevation</button>
+                <button type="button" id="mode-aspect" class="mode-btn py-2 px-4 text-sm font-medium text-gray-900 bg-white rounded-r-md border border-gray-200 hover:bg-gray-100 focus:z-10 focus:ring-2 focus:ring-indigo-500">Aspect</button>
+            </div>
+        </div>
+
+        <!-- Slope Legend -->
+        <div id="slope-legend" class="mt-4 hidden">
+            <h2 class="font-semibold text-gray-700 mb-2">Steepness Legend</h2>
+            <div class="flex flex-col space-y-1">
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #2dc937;"></div><span class="text-sm">0-10° (Flat)</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #99c140;"></div><span class="text-sm">10-20° (Moderate)</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #e7b416;"></div><span class="text-sm">20-30° (Steep)</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #f58d11;"></div><span class="text-sm">30-45° (Very Steep)</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #cc3232;"></div><span class="text-sm">> 45° (Extreme)</span></div>
+            </div>
+             <p class="text-xs text-gray-500 mt-2 italic">Note: Data is shown up to zoom level 14 and is then scaled for closer views.</p>
+        </div>
+        
+        <!-- Elevation Legend -->
+        <div id="elevation-legend" class="mt-4 hidden">
+            <h2 class="font-semibold text-gray-700 mb-2">Elevation Legend</h2>
+             <div class="flex flex-col space-y-1">
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #cc3232;"></div><span class="text-sm">> 3000m</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #f58d11;"></div><span class="text-sm">2500m - 3000m</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #e7b416;"></div><span class="text-sm">2000m - 2500m</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2 border" ></div><span class="text-sm">&lt; 2000m (Original Tile)</span></div>
+            </div>
+        </div>
+
+        <!-- Aspect Legend -->
+        <div id="aspect-legend" class="mt-4 hidden">
+            <h2 class="font-semibold text-gray-700 mb-2">Aspect Legend (Slope Direction)</h2>
+             <div class="flex flex-col space-y-1">
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #0000FF;"></div><span class="text-sm">North</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #FFFF00;"></div><span class="text-sm">East</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #FF0000;"></div><span class="text-sm">South</span></div>
+                <div class="flex items-center"><div class="w-5 h-5 rounded mr-2" style="background-color: #00FF00;"></div><span class="text-sm">West</span></div>
+            </div>
+        </div>
+        
+        <!-- Opacity Slider -->
+        <div id="opacity-control" class="mt-4 hidden">
+             <label for="opacity" class="block text-sm font-medium text-gray-700">Overlay Opacity</label>
+             <input type="range" id="opacity" min="0" max="1" step="0.1" value="0.7" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+
+    <!-- Custom JavaScript -->
+    <script src="avamap.js"></script>
+</body>
+</html>
