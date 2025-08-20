@@ -111,4 +111,7 @@ out/
 
 # Test files
 test-results/
-coverage/ 
+coverage/
+
+# Downloaded data files
+data/ 

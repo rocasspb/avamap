@@ -12,6 +12,7 @@ A web-based tool that generates slope maps by analyzing elevation data and calcu
   - Yellow (20-30°): Steep terrain
   - Orange (30-45°): Very steep terrain
   - Red (>45°): Extreme slopes
+- **Avalanche Regions Overlay**: Official avalanche warning region boundaries
 - Adjustable overlay opacity
 - Responsive design with Tailwind CSS
 
@@ -51,8 +52,32 @@ The configuration file includes:
 ## How to Use
 
 1. **Setup configuration**: Copy and configure `config.template.js` as described above
-2. **Open the HTML file**: Simply open `avamap.html` in any modern web browser
-3. **Explore the map**: Pan and zoom to see slope calculations in real-time
+2. **Download regions data**: Run the data parser script to get avalanche region boundaries
+3. **Open the HTML file**: Simply open `avamap.html` in any modern web browser
+4. **Explore the map**: Pan and zoom to see slope calculations and region boundaries
+
+## Avalanche Regions Data
+
+The application includes an overlay of official avalanche warning regions from [regions.avalanches.org](https://regions.avalanches.org/). To use this feature:
+
+1. **Download the data**:
+   ```bash
+   node parse-avalanche-regions.js
+   ```
+
+2. **Data includes**:
+   - Switzerland (CH): 149 regions
+   - France (FR): 35 regions  
+   - Norway (NO): 24 regions
+   - Italy South Tyrol (IT-32-BZ): 38 regions
+   - Germany Bavaria (DE-BY): 13 regions
+   - And more...
+
+3. **Features**:
+   - Interactive region boundaries with hover effects
+   - Region information popups
+   - Color-coded regions for easy identification
+   - Toggle button to show/hide the overlay
 
 ## Technical Details
 
