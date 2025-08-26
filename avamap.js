@@ -1,8 +1,46 @@
 // --- Global Variables ---
 let map;
 let slopeLayer;
+let regionLayer;
 let MAPI_KEY = config.MAPTILER_API_KEY; // Get from config file
 let currentMode = 'slope'; // 'slope', 'elevation', or 'aspect'
+// In-memory avalanche regions store (loaded on page load)
+let avalancheRegions = null;
+let avalancheRegionsLoaded = false;
+const AVALANCHE_REGIONS_BASE_URL = 'https://regions.avalanches.org';
+const AVALANCHE_REGIONS_LIST = [
+    'AT', // Austria
+    'CH', // Switzerland
+    'DE-BY', // Germany Bavaria
+    'IT-32-BZ', // Italy South Tyrol
+    'IT-32-TN', // Italy Trentino
+    'FR', // France
+    'NO', // Norway
+    'SE', // Sweden
+    'IS', // Iceland
+    'CA', // Canada
+    'US', // United States
+    'NZ'  // New Zealand
+];
+
+async function fetchJsonWithCorsFallback(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        // Try a simple CORS proxy fallback
+        try {
+            const proxyUrl = `https://cors.isomorphic-git.org/${url}`;
+            const res2 = await fetch(proxyUrl);
+            if (!res2.ok) throw new Error(`Proxy HTTP ${res2.status}`);
+            return await res2.json();
+        } catch (proxyErr) {
+            console.warn('CORS fallback failed for', url, proxyErr.message || proxyErr);
+            throw err;
+        }
+    }
+}
 
 // --- Map Initialization ---
 map = L.map('map').setView(config.DEFAULT_CENTER, config.DEFAULT_ZOOM);
@@ -166,7 +204,9 @@ function initializeSlopeLayer() {
                 maxZoom: 18 
             });
             slopeLayer.setOpacity(document.getElementById('opacity').value || config.DEFAULT_OPACITY);
-    map.addLayer(slopeLayer);
+    if (currentMode !== 'region') {
+        map.addLayer(slopeLayer);
+    }
 
     document.getElementById('mode-selector').classList.remove('hidden');
     document.getElementById('opacity-control').classList.remove('hidden');
@@ -240,8 +280,51 @@ function handleMapClick(e) {
     tileImage.onerror = () => popup.setContent('Failed to load elevation data.');
 }
 
+// --- Avalanche Regions (in-memory) ---
+async function loadAvalancheRegionsIntoMemory() {
+    if (avalancheRegionsLoaded) return avalancheRegions;
+    try {
+        const fetches = AVALANCHE_REGIONS_LIST.map(async (code) => {
+            const url = `${AVALANCHE_REGIONS_BASE_URL}/micro-regions/${code}_micro-regions.geojson.json`;
+            try {
+                const fc = await fetchJsonWithCorsFallback(url);
+                return { code, fc };
+            } catch (err) {
+                console.warn(`Failed to load regions for ${code}:`, err.message);
+                return null;
+            }
+        });
+        const results = await Promise.all(fetches);
+        const allFeatures = [];
+        for (const item of results) {
+            if (item && item.fc && Array.isArray(item.fc.features)) {
+                const code = item.code;
+                for (const feature of item.fc.features) {
+                    if (feature && feature.properties) {
+                        feature.properties.region_code = feature.properties.region_code || code;
+                        feature.properties.source = 'regions.avalanches.org';
+                    }
+                    allFeatures.push(feature);
+                }
+            }
+        }
+        avalancheRegions = { type: 'FeatureCollection', features: allFeatures };
+        avalancheRegionsLoaded = true;
+        console.log(`Loaded avalanche regions in memory: ${allFeatures.length} features`);
+        if (!allFeatures.length) {
+            console.warn('No avalanche region features were loaded. Check network/CORS.');
+        }
+        return avalancheRegions;
+    } catch (err) {
+        console.error('Error loading avalanche regions:', err);
+        throw err;
+    }
+}
+
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function() {
+    // Kick off background load of avalanche regions into memory
+    loadAvalancheRegionsIntoMemory().catch(() => {});
     // Check if API key is available from config
     if (MAPI_KEY && MAPI_KEY !== 'YOUR_API_KEY_HERE') {
         // API key is available, hide the input section and initialize the layer
@@ -329,10 +412,51 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.classList.add('active');
             currentMode = btn.id.split('-')[1];
             updateLegend();
-            if (slopeLayer) slopeLayer.redraw();
+            // Toggle layers based on mode
+            if (currentMode === 'region') {
+                if (slopeLayer && map.hasLayer(slopeLayer)) map.removeLayer(slopeLayer);
+                ensureRegionLayer();
+            } else {
+                if (regionLayer && map.hasLayer(regionLayer)) map.removeLayer(regionLayer);
+                if (slopeLayer && !map.hasLayer(slopeLayer)) map.addLayer(slopeLayer);
+                if (slopeLayer) slopeLayer.redraw();
+            }
         });
     });
 
     // Map click handler
     map.on('click', handleMapClick);
 }); 
+
+function ensureRegionLayer() {
+    if (regionLayer && !map.hasLayer(regionLayer)) {
+        map.addLayer(regionLayer);
+        return;
+    }
+    if (!regionLayer) {
+        // Ensure regions are loaded
+        const useRegions = () => {
+            if (!avalancheRegions || !Array.isArray(avalancheRegions.features)) return;
+            regionLayer = L.geoJSON(avalancheRegions, {
+                style: function () {
+                    return {
+                        color: '#ef4444', // red-500 for visibility
+                        weight: 2,
+                        opacity: 1,
+                        fill: false
+                    };
+                },
+            });
+            map.addLayer(regionLayer);
+            try { regionLayer.bringToFront && regionLayer.bringToFront(); } catch (_) {}
+            if (!avalancheRegions.features.length) {
+                console.warn('Region layer added but there are zero features to display.');
+            }
+        };
+        if (avalancheRegionsLoaded) {
+            useRegions();
+        } else {
+            loadAvalancheRegionsIntoMemory().then(useRegions).catch(() => {});
+        }
+    }
+}
