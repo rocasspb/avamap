@@ -9,15 +9,42 @@ let avalancheRegions = null;
 let avalancheRegionsLoaded = false;
 const AVALANCHE_REGIONS_BASE_URL = 'https://regions.avalanches.org';
 const AVALANCHE_REGIONS_LIST = [
-    'AT', // Austria
+    'AD', // Andorra
+    'AT-01', // Austria
+    'AT-02', // Austria
+    'AT-03', // Austria
+    'AT-04', // Austria
+    'AT-05', // Austria
+    'AT-06', // Austria
+    'AT-07', // Austria
+    'AT-08', // Austria
     'CH', // Switzerland
+    'CZ', // Chech Rep.
     'DE-BY', // Germany Bavaria
+    'ES-CT', // Spain Catalonia
+    'ES-CT-L', // Spain Catalonia Lleida
+    'ES', // Spain
+    'FI', // Finland   
+    'FR', // France
+    'GB', // Great Britain
+    'IS', // Iceland
+    'IT-21', // Italy
+    'IT-23', // Italy
+    'IT-25', // Italy
     'IT-32-BZ', // Italy South Tyrol
     'IT-32-TN', // Italy Trentino
-    'FR', // France
+    'IT-34', // Italy
+    'IT-36', // Italy
+    'IT-57', // Italy
+    'IT-MeteoMont', // Italy
     'NO', // Norway
+    'PL', // Poland
+    'PL-12', // Poland Silesia
+    'RO', // Romania
     'SE', // Sweden
-    'IS', // Iceland
+    'SI', // Slovenia
+    'SK', // Slovakia
+    'UA', // Ukraine
     'CA', // Canada
     'US', // United States
     'NZ'  // New Zealand
