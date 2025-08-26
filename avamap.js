@@ -271,7 +271,10 @@ function handleMapClick(e) {
                 aspectDir = getAspectDirection(aspectDeg);
             }
 
-            popup.setContent(`<strong>Slope:</strong> ${slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${aspectDeg.toFixed(0)}° (${aspectDir})`);
+            // Determine avalanche region for the clicked point
+            const regionInfo = findAvalancheRegionForPoint(lat, lng);
+            const regionLine = regionInfo ? `<br><strong>Region:</strong> ${regionInfo}` : '';
+            popup.setContent(`<strong>Slope:</strong> ${slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${aspectDeg.toFixed(0)}° (${aspectDir})${regionLine}`);
         } catch (err) {
             popup.setContent('Could not calculate data.');
             console.error("Error calculating data on click:", err);
@@ -459,4 +462,62 @@ function ensureRegionLayer() {
             loadAvalancheRegionsIntoMemory().then(useRegions).catch(() => {});
         }
     }
+}
+
+// --- Geo helpers: point-in-polygon for GeoJSON ---
+function findAvalancheRegionForPoint(lat, lng) {
+    try {
+        if (!avalancheRegionsLoaded || !avalancheRegions || !Array.isArray(avalancheRegions.features)) return null;
+        const point = [lng, lat]; // GeoJSON uses [lng, lat]
+        for (let i = 0; i < avalancheRegions.features.length; i++) {
+            const f = avalancheRegions.features[i];
+            if (!f || !f.geometry) continue;
+            const { type, coordinates } = f.geometry;
+            if (type === 'Polygon') {
+                if (polygonContainsPoint(point, coordinates)) {
+                    return getRegionLabel(f);
+                }
+            } else if (type === 'MultiPolygon') {
+                for (let p = 0; p < coordinates.length; p++) {
+                    if (polygonContainsPoint(point, coordinates[p])) {
+                        return getRegionLabel(f);
+                    }
+                }
+            }
+        }
+        return null;
+    } catch (err) {
+        console.warn('Region lookup failed:', err.message || err);
+        return null;
+    }
+}
+
+function getRegionLabel(feature) {
+    const props = feature && feature.properties ? feature.properties : {};
+    return props.name || props.id || props.region_code || 'Region';
+}
+
+// coordinates: Polygon as array of linear rings [[ [lng,lat], ... ]]
+function polygonContainsPoint(point, polygon) {
+    if (!polygon || !polygon.length) return false;
+    const outer = polygon[0];
+    if (!ringContainsPoint(point, outer)) return false;
+    // if inside outer, ensure not inside any hole
+    for (let i = 1; i < polygon.length; i++) {
+        if (ringContainsPoint(point, polygon[i])) return false;
+    }
+    return true;
+}
+
+// Classic ray casting on ring (array of [lng,lat])
+function ringContainsPoint(point, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        const intersect = ((yi > point[1]) !== (yj > point[1])) &&
+            (point[0] < (xj - xi) * (point[1] - yi) / ((yj - yi) || 1e-12) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
 }
