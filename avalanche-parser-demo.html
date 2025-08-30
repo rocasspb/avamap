@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avalanche Bulletin Parser Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .controls {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+        
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background: #117a8b;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .content {
+            padding: 20px;
+        }
+        
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .danger-level {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .danger-low { background: #d4edda; color: #155724; }
+        .danger-moderate { background: #fff3cd; color: #856404; }
+        .danger-considerable { background: #f8d7da; color: #721c24; }
+        .danger-high { background: #f5c6cb; color: #721c24; }
+        .danger-extreme { background: #721c24; color: white; }
+        
+        .region-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        
+        .region-item {
+            padding: 8px;
+            border-bottom: 1px solid #f1f3f4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .region-item:last-child {
+            border-bottom: none;
+        }
+        
+        .region-name {
+            font-weight: 500;
+        }
+        
+        .region-id {
+            color: #6c757d;
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚨 Avalanche Bulletin Parser</h1>
+            <p>Parse and analyze EUREGIO avalanche bulletin data from the Alps</p>
+        </div>
+        
+        <div class="controls">
+            <button id="fetchData" class="btn btn-primary">📡 Fetch Latest Data</button>
+            <button id="showStats" class="btn btn-success" disabled>📊 Show Statistics</button>
+            <button id="searchRegions" class="btn btn-info" disabled>🔍 Search Regions</button>
+            <button id="exportData" class="btn btn-success" disabled>💾 Export Data</button>
+            <button id="clearOutput" class="btn btn-info" disabled>🗑️ Clear Output</button>
+        </div>
+        
+        <div class="content">
+            <div id="output">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Click "Fetch Latest Data" to start analyzing avalanche bulletins</p>
+                    <p><small>Data source: <a href="https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json" target="_blank">EUREGIO Avalanche Report</a></small></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the parser script -->
+    <script src="avalanche-bulletin-parser.js"></script>
+    
+    <script>
+        let currentParser = null;
+        let currentData = null;
+        
+        // DOM elements
+        const fetchBtn = document.getElementById('fetchData');
+        const statsBtn = document.getElementById('showStats');
+        const searchBtn = document.getElementById('searchRegions');
+        const exportBtn = document.getElementById('exportData');
+        const clearBtn = document.getElementById('clearOutput');
+        const output = document.getElementById('output');
+        
+        // Event listeners
+        fetchBtn.addEventListener('click', fetchData);
+        statsBtn.addEventListener('click', showStatistics);
+        searchBtn.addEventListener('click', searchRegions);
+        exportBtn.addEventListener('click', exportData);
+        clearBtn.addEventListener('click', clearOutput);
+        
+        async function fetchData() {
+            try {
+                // Update UI
+                fetchBtn.disabled = true;
+                fetchBtn.textContent = '⏳ Fetching...';
+                output.innerHTML = '<div class="loading"><div class="spinner"></div><p>Fetching latest avalanche data...</p></div>';
+                
+                // Create parser and fetch data
+                currentParser = new AvalancheBulletinParser();
+                currentData = await currentParser.fetchAndParse();
+                
+                // Enable buttons
+                statsBtn.disabled = false;
+                searchBtn.disabled = false;
+                exportBtn.disabled = false;
+                clearBtn.disabled = false;
+                
+                // Show summary
+                showSummary(currentData);
+                
+            } catch (error) {
+                output.innerHTML = `<div class="loading"><p style="color: #dc3545;">❌ Error: ${error.message}</p><p>Please check your internet connection and try again.</p></div>`;
+            } finally {
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = '📡 Fetch Latest Data';
+            }
+        }
+        
+        function showSummary(data) {
+            const summary = data.summary;
+            const metadata = data.metadata;
+            
+            output.innerHTML = `
+                <h2>📊 Data Summary</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">${summary.totalBulletins}</div>
+                        <div class="stat-label">Total Bulletins</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${summary.totalRegions}</div>
+                        <div class="stat-label">Total Regions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${summary.countries.length}</div>
+                        <div class="stat-label">Countries</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${Object.keys(summary.problemTypes).length}</div>
+                        <div class="stat-label">Problem Types</div>
+                    </div>
+                </div>
+                
+                <h3>⚠️ Danger Level Distribution</h3>
+                <div class="stats-grid">
+                    ${Object.entries(summary.dangerLevels).map(([level, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-number danger-level danger-${level}">${level.toUpperCase()}</div>
+                            <div class="stat-label">${count} occurrences</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h3>🏔️ Problem Types</h3>
+                <div class="stats-grid">
+                    ${Object.entries(summary.problemTypes).map(([type, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-number">${count}</div>
+                            <div class="stat-label">${type.replace('_', ' ')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h3>🌍 Countries</h3>
+                <p><strong>${summary.countries.join(', ')}</strong></p>
+                
+                <h3>⏰ Time Information</h3>
+                <p><strong>Latest Publication:</strong> ${new Date(summary.publicationTime).toLocaleString()}</p>
+                <p><strong>Valid Until:</strong> ${new Date(summary.validTime.endTime).toLocaleString()}</p>
+                
+                <h3>📝 Metadata</h3>
+                <p><strong>Languages:</strong> ${metadata.languages.join(', ')}</p>
+                <p><strong>Custom Data Sources:</strong> ${metadata.customDataSources.join(', ')}</p>
+                <p><strong>Tendency Types:</strong> ${metadata.tendencyTypes.join(', ')}</p>
+            `;
+        }
+        
+        function showStatistics() {
+            if (!currentParser) return;
+            
+            const stats = currentParser.getStatistics();
+            
+            output.innerHTML = `
+                <h2>📈 Detailed Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.totalBulletins}</div>
+                        <div class="stat-label">Total Bulletins</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.totalRegions}</div>
+                        <div class="stat-label">Total Regions</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.averageProblemsPerBulletin.toFixed(2)}</div>
+                        <div class="stat-label">Avg Problems/Bulletin</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${stats.averageRegionsPerBulletin.toFixed(2)}</div>
+                        <div class="stat-label">Avg Regions/Bulletin</div>
+                    </div>
+                </div>
+                
+                <h3>📊 Country Distribution</h3>
+                <div class="stats-grid">
+                    ${Object.entries(stats.countryDistribution).map(([country, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-number">${count}</div>
+                            <div class="stat-label">${country}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h3>⚠️ Danger Level Distribution</h3>
+                <div class="stats-grid">
+                    ${Object.entries(stats.dangerLevelDistribution).map(([level, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-number danger-level danger-${level}">${level.toUpperCase()}</div>
+                            <div class="stat-label">${count} occurrences</div>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h3>🏔️ Problem Type Distribution</h3>
+                <div class="stats-grid">
+                    ${Object.entries(stats.problemTypeDistribution).map(([type, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-number">${count}</div>
+                            <div class="stat-label">${type.replace('_', ' ')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        function searchRegions() {
+            if (!currentParser) return;
+            
+            const italianRegions = currentParser.getRegionsByCountry('IT');
+            const austrianRegions = currentParser.getRegionsByCountry('AT');
+            const moderateDangerRegions = currentParser.getRegionsByDangerLevel('moderate');
+            
+            output.innerHTML = `
+                <h2>🔍 Region Search Results</h2>
+                
+                <h3>🇮🇹 Italian Regions (${italianRegions.length})</h3>
+                <div class="region-list">
+                    ${italianRegions.slice(0, 10).map(region => `
+                        <div class="region-item">
+                            <div>
+                                <div class="region-name">${region.name}</div>
+                                <div class="region-id">${region.regionID}</div>
+                            </div>
+                            <div>
+                                ${region.currentDanger ? `<span class="danger-level danger-${region.currentDanger}">${region.currentDanger.toUpperCase()}</span>` : 'Unknown'}
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${italianRegions.length > 10 ? `<div style="text-align: center; padding: 10px; color: #6c757d;">... and ${italianRegions.length - 10} more</div>` : ''}
+                </div>
+                
+                <h3>🇦🇹 Austrian Regions (${austrianRegions.length})</h3>
+                <div class="region-list">
+                    ${austrianRegions.slice(0, 10).map(region => `
+                        <div class="region-item">
+                            <div>
+                                <div class="region-name">${region.name}</div>
+                                <div class="region-id">${region.regionID}</div>
+                            </div>
+                            <div>
+                                ${region.currentDanger ? `<span class="danger-level danger-${region.currentDanger}">${region.currentDanger.toUpperCase()}</span>` : 'Unknown'}
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${austrianRegions.length > 10 ? `<div style="text-align: center; padding: 10px; color: #6c757d;">... and ${austrianRegions.length - 10} more</div>` : ''}
+                </div>
+                
+                <h3>⚠️ Regions with Moderate Danger (${moderateDangerRegions.length})</h3>
+                <div class="region-list">
+                    ${moderateDangerRegions.slice(0, 10).map(region => `
+                        <div class="region-item">
+                            <div>
+                                <div class="region-name">${region.name}</div>
+                                <div class="region-id">${region.regionID}</div>
+                            </div>
+                            <div>
+                                <span class="danger-level danger-moderate">MODERATE</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${moderateDangerRegions.length > 10 ? `<div style="text-align: center; padding: 10px; color: #6c757d;">... and ${moderateDangerRegions.length - 10} more</div>` : ''}
+                </div>
+            `;
+        }
+        
+        function exportData() {
+            if (!currentParser) return;
+            
+            const jsonData = currentParser.exportToJSON();
+            const blob = new Blob([jsonData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `avalanche-bulletins-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            output.innerHTML = `
+                <div class="loading">
+                    <p>✅ Data exported successfully!</p>
+                    <p>Filename: avalanche-bulletins-${new Date().toISOString().split('T')[0]}.json</p>
+                    <p>Size: ${(jsonData.length / 1024).toFixed(2)} KB</p>
+                </div>
+            `;
+        }
+        
+        function clearOutput() {
+            output.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Click "Fetch Latest Data" to start analyzing avalanche bulletins</p>
+                    <p><small>Data source: <a href="https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json" target="_blank">EUREGIO Avalanche Report</a></small></p>
+                </div>
+            `;
+            
+            // Disable buttons
+            statsBtn.disabled = true;
+            searchBtn.disabled = true;
+            exportBtn.disabled = true;
+            clearBtn.disabled = true;
+            
+            currentParser = null;
+            currentData = null;
+        }
+    </script>
+</body>
+</html>
