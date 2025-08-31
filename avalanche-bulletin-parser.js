@@ -68,7 +68,7 @@ class AvalancheBulletinParser {
                         this.regions.set(region.regionID, {
                             ...region,
                             bulletins: [],
-                            currentDanger: null,
+                            dangerLevels: [],
                             problems: []
                         });
                     }
@@ -78,13 +78,7 @@ class AvalancheBulletinParser {
                     
                     // Extract current danger rating
                     if (bulletin.dangerRatings && bulletin.dangerRatings.length > 0) {
-                        const currentDanger = bulletin.dangerRatings.find(dr => 
-                            dr.validTimePeriod === 'all_day' || 
-                            !dr.validTimePeriod
-                        );
-                        if (currentDanger) {
-                            regionData.currentDanger = currentDanger.mainValue;
-                        }
+                        regionData.dangerLevels.push(...bulletin.dangerRatings)
                     }
                     
                     // Extract avalanche problems
@@ -241,22 +235,11 @@ class AvalancheBulletinParser {
     /**
      * Get current danger level for a specific region
      * @param {string} regionId - The region ID
-     * @returns {string|null} Current danger level or null if not found
+     * @returns {[]|null} Current danger levels array or null if not found
      */
     getCurrentDangerLevel(regionId) {
         const region = this.regions.get(regionId);
-        return region ? region.currentDanger : null;
-    }
-
-    /**
-     * Get all regions with a specific danger level
-     * @param {string} dangerLevel - The danger level to search for
-     * @returns {Array} Array of regions with the specified danger level
-     */
-    getRegionsByDangerLevel(dangerLevel) {
-        return Array.from(this.regions.values()).filter(region => 
-            region.currentDanger === dangerLevel
-        );
+        return region ? region.dangerLevels : null;
     }
 
     /**
