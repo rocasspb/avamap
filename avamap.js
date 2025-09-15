@@ -7,6 +7,9 @@ let currentMode = 'slope'; // 'slope', 'elevation', or 'aspect'
 // In-memory avalanche regions store (loaded on page load)
 let avalancheRegions = null;
 let avalancheRegionsLoaded = false;
+// Avalanche bulletin data
+let avalancheData = null;
+let avalancheDataLoaded = false;
 const AVALANCHE_REGIONS_BASE_URL = 'https://regions.avalanches.org';
 const AVALANCHE_REGIONS_LIST = [
     'AD', // Andorra
@@ -301,13 +304,123 @@ function handleMapClick(e) {
             // Determine avalanche region for the clicked point
             const regionInfo = findAvalancheRegionForPoint(lat, lng);
             const regionLine = regionInfo ? `<br><strong>Region:</strong> ${regionInfo}` : '';
-            popup.setContent(`<strong>Slope:</strong> ${slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${aspectDeg.toFixed(0)}° (${aspectDir})${regionLine}`);
+            
+            // Get avalanche data for this location and elevation
+            const avalancheInfo = getAvalancheInfoForLocation(lat, lng, elev);
+            
+            let avalancheContent = '';
+            if (avalancheInfo && avalancheInfo.dangerLevel) {
+                const dangerEmoji = getDangerLevelEmoji(avalancheInfo.dangerLevel.mainValue);
+                const dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
+                const elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
+                const problems = formatAvalancheProblems(avalancheInfo.problems);
+                
+                avalancheContent = `
+                    <br><br><strong>🚨 Avalanche Information:</strong>
+                    <br><strong>Danger Level:</strong> ${dangerEmoji} ${dangerLevel} (${elevationRange})
+                    <br><strong>Elevation:</strong> ${elev.toFixed(0)}m
+                    <br><strong>Problems:</strong><br>${problems}
+                `;
+            } else if (regionInfo) {
+                avalancheContent = `<br><br><strong>🚨 Avalanche Information:</strong><br><em>No current bulletin data available for this region</em>`;
+            }
+            
+            popup.setContent(`<strong>Slope:</strong> ${slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${aspectDeg.toFixed(0)}° (${aspectDir})${regionLine}${avalancheContent}`);
         } catch (err) {
             popup.setContent('Could not calculate data.');
             console.error("Error calculating data on click:", err);
         }
     };
     tileImage.onerror = () => popup.setContent('Failed to load elevation data.');
+}
+
+// --- Avalanche Bulletin Data Loading ---
+async function loadAvalancheBulletins() {
+    if (avalancheDataLoaded) return avalancheData;
+    
+    try {
+        console.log('Loading avalanche bulletin data...');
+        const response = await fetchJsonWithCorsFallback('https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json');
+        
+        // Create new AvalancheData instance and parse the data
+        avalancheData = new AvalancheData();
+        avalancheData.parse(response);
+        
+        avalancheDataLoaded = true;
+        console.log(`✅ Loaded avalanche bulletin data: ${avalancheData.summary.totalBulletins} bulletins, ${avalancheData.summary.totalRegions} regions`);
+        
+        return avalancheData;
+    } catch (err) {
+        console.error('Error loading avalanche bulletins:', err);
+        avalancheDataLoaded = false;
+        return null;
+    }
+}
+
+// --- Helper Functions for Avalanche Data ---
+function getAvalancheInfoForLocation(lat, lng, elevation) {
+    if (!avalancheDataLoaded || !avalancheData) {
+        return null;
+    }
+    
+    try {
+        // Find the region for this location
+        const regionInfo = findAvalancheRegionForPoint(lat, lng);
+        if (!regionInfo) {
+            return null;
+        }
+        
+        // Try to find a matching region in our avalanche data
+        const regions = avalancheData.getAllRegions();
+        const matchingRegion = regions.find(region => 
+            region.name === regionInfo || 
+            region.regionID.includes(regionInfo) ||
+            regionInfo.includes(region.regionID)
+        );
+        
+        if (!matchingRegion) {
+            return null;
+        }
+        
+        // Get danger level and problems for this elevation
+        const dangerLevel = avalancheData.getDangerLevel(matchingRegion.regionID, elevation);
+        const problems = avalancheData.getProblems(matchingRegion.regionID, elevation);
+        
+        return {
+            region: matchingRegion,
+            dangerLevel: dangerLevel,
+            problems: problems,
+            elevation: elevation
+        };
+    } catch (err) {
+        console.error('Error getting avalanche info:', err);
+        return null;
+    }
+}
+
+function formatAvalancheProblems(problems) {
+    if (!problems || problems.length === 0) {
+        return '<em>No specific problems reported</em>';
+    }
+    
+    return problems.map(problem => {
+        const problemType = problem.problemType.replace(/_/g, ' ').toLowerCase();
+        const elevationDesc = problem.elevation.getDescription();
+        const aspects = problem.aspects && problem.aspects.length > 0 ? 
+            ` (${problem.aspects.join(', ')})` : '';
+        return `<strong>${problemType}</strong> at ${elevationDesc}${aspects}`;
+    }).join('<br>');
+}
+
+function getDangerLevelEmoji(level) {
+    const emojiMap = {
+        'low': '🟢',
+        'moderate': '🟡', 
+        'considerable': '🟠',
+        'high': '🔴',
+        'extreme': '⚫'
+    };
+    return emojiMap[level] || '❓';
 }
 
 // --- Avalanche Regions (in-memory) ---
@@ -353,8 +466,9 @@ async function loadAvalancheRegionsIntoMemory() {
 
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function() {
-    // Kick off background load of avalanche regions into memory
+    // Kick off background load of avalanche regions and bulletins into memory
     loadAvalancheRegionsIntoMemory().catch(() => {});
+    loadAvalancheBulletins().catch(() => {});
     // Check if API key is available from config
     if (MAPI_KEY && MAPI_KEY !== 'YOUR_API_KEY_HERE') {
         // API key is available, hide the input section and initialize the layer
