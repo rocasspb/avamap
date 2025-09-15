@@ -6,7 +6,7 @@
  */
 
 // Import the parser (for Node.js)
-// const AvalancheBulletinParser = require('./avalanche-bulletin-parser.js');
+const AvalancheBulletinParser = require('./avalanche-bulletin-parser.js');
 
 // For browser usage, the parser should be loaded via script tag first
 
