@@ -313,7 +313,7 @@ function handleMapClick(e) {
                 const dangerEmoji = getDangerLevelEmoji(avalancheInfo.dangerLevel.mainValue);
                 const dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
                 const elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
-                const problems = formatAvalancheProblems(avalancheInfo.problems);
+                const problems = formatAvalancheProblems(avalancheInfo.problems, aspectDir);
                 
                 avalancheContent = `
                     <br><br><strong>🚨 Avalanche Information:</strong>
@@ -398,12 +398,23 @@ function getAvalancheInfoForLocation(lat, lng, elevation) {
     }
 }
 
-function formatAvalancheProblems(problems) {
+function formatAvalancheProblems(problems, currentAspect = null) {
     if (!problems || problems.length === 0) {
         return '<em>No specific problems reported</em>';
     }
+
+    // If an aspect is provided, filter problems to those that include this aspect
+    let filtered = problems;
+    if (currentAspect && typeof currentAspect === 'string') {
+        const asp = currentAspect.toUpperCase();
+        filtered = problems.filter(p => Array.isArray(p.aspects) && p.aspects.map(a => String(a).toUpperCase()).includes(asp));
+    }
+
+    if (currentAspect && filtered.length === 0) {
+        return `<em>No specific problems reported for ${currentAspect} aspects</em>`;
+    }
     
-    return problems.map(problem => {
+    return filtered.map(problem => {
         const problemType = problem.problemType.replace(/_/g, ' ').toLowerCase();
         const elevationDesc = problem.elevation.getDescription();
         const aspects = problem.aspects && problem.aspects.length > 0 ? 
