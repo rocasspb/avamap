@@ -3,7 +3,11 @@ let map;
 let slopeLayer;
 let regionLayer;
 let MAPI_KEY = config.MAPTILER_API_KEY; // Get from config file
-let currentMode = 'slope'; // 'slope', 'elevation', or 'aspect'
+let currentMode = 'slope'; // 'slope', 'elevation', 'aspect', or 'custom'
+// Custom mode state
+let customMinElev = 0;
+let customMaxElev = 4000;
+let customAspects = new Set(['N','NE','E','SE','S','SW','W','NW']);
 // In-memory avalanche regions store (loaded on page load)
 let avalancheRegions = null;
 let avalancheRegionsLoaded = false;
@@ -98,38 +102,46 @@ function getColorForAspect(angle) {
 
     if (angle >= 0 && angle < 90) { // North to East
         const ratio = angle / 90;
-        r = (1 - ratio) * north[0] + ratio * west[0];
-        g = (1 - ratio) * north[1] + ratio * west[1];
-        b = (1 - ratio) * north[2] + ratio * west[2];
+        r = (1 - ratio) * north[0] + ratio * east[0];
+        g = (1 - ratio) * north[1] + ratio * east[1];
+        b = (1 - ratio) * north[2] + ratio * east[2];
     } else if (angle >= 90 && angle < 180) { // East to South
         const ratio = (angle - 90) / 90;
-        r = (1 - ratio) * west[0] + ratio * south[0];
-        g = (1 - ratio) * west[1] + ratio * south[1];
-        b = (1 - ratio) * west[2] + ratio * south[2];
+        r = (1 - ratio) * east[0] + ratio * south[0];
+        g = (1 - ratio) * east[1] + ratio * south[1];
+        b = (1 - ratio) * east[2] + ratio * south[2];
     } else if (angle >= 180 && angle < 270) { // South to West
         const ratio = (angle - 180) / 90;
-        r = (1 - ratio) * south[0] + ratio * east[0];
-        g = (1 - ratio) * south[1] + ratio * east[1];
-        b = (1 - ratio) * south[2] + ratio * east[2];
+        r = (1 - ratio) * south[0] + ratio * west[0];
+        g = (1 - ratio) * south[1] + ratio * west[1];
+        b = (1 - ratio) * south[2] + ratio * west[2];
     } else { // West to North
         const ratio = (angle - 270) / 90;
-        r = (1 - ratio) * east[0] + ratio * north[0];
-        g = (1 - ratio) * east[1] + ratio * north[1];
-        b = (1 - ratio) * east[2] + ratio * north[2];
+        r = (1 - ratio) * west[0] + ratio * north[0];
+        g = (1 - ratio) * west[1] + ratio * north[1];
+        b = (1 - ratio) * west[2] + ratio * north[2];
     }
     return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0.7)`;
 }
 
 function getAspectDirection(degrees) {
     if (degrees > 337.5 || degrees <= 22.5) return 'N';
-    if (degrees > 22.5 && degrees <= 67.5) return 'NE';
-    if (degrees > 67.5 && degrees <= 112.5) return 'E';
-    if (degrees > 112.5 && degrees <= 157.5) return 'SE';
+    if (degrees > 22.5 && degrees <= 67.5) return 'NW';
+    if (degrees > 67.5 && degrees <= 112.5) return 'W';
+    if (degrees > 112.5 && degrees <= 157.5) return 'SW';
     if (degrees > 157.5 && degrees <= 202.5) return 'S';
-    if (degrees > 202.5 && degrees <= 247.5) return 'SW';
-    if (degrees > 247.5 && degrees <= 292.5) return 'W';
-    if (degrees > 292.5 && degrees <= 337.5) return 'NW';
+    if (degrees > 202.5 && degrees <= 247.5) return 'SE';
+    if (degrees > 247.5 && degrees <= 292.5) return 'E';
+    if (degrees > 292.5 && degrees <= 337.5) return 'NE';
     return '';
+}
+
+function computeAspectDegrees(dz_dx, dz_dy) {
+    const aspectRad = Math.atan2(-dz_dx, -dz_dy);
+    let aspectDeg = aspectRad * (180 / Math.PI);
+    if (aspectDeg < 0) aspectDeg += 360;
+    aspectDeg = (aspectDeg + 180) % 360;
+    return aspectDeg;
 }
 
 function initializeSlopeLayer() {
@@ -158,7 +170,7 @@ function initializeSlopeLayer() {
                     const outputImageData = ctx.createImageData(size.x, size.y);
                     const outputData = outputImageData.data;
 
-                    if (currentMode === 'slope' || currentMode === 'aspect') {
+                    if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'custom') {
                         for (let y = 0; y < size.y; y++) {
                             for (let x = 0; x < size.x; x++) {
                                 const i = (y * size.x + x) * 4;
@@ -174,44 +186,62 @@ function initializeSlopeLayer() {
                                 const slopeRad = Math.atan(Math.sqrt(dz_dx*dz_dx + dz_dy*dz_dy) / resolution);
                                 const slopeDeg = slopeRad * (180 / Math.PI);
 
-                                let color;
-                                if (currentMode === 'slope') {
-                                    color = getColorForSlope(slopeDeg);
-                                } else { // aspect
-                                    if (slopeDeg < 1) { // Use slope angle to determine if flat
-                                        color = 'rgba(0,0,0,0)';
+                                if (currentMode === 'custom') {
+                                    // Compute aspect only if not flat
+                                    let match = false;
+                                    if (slopeDeg > 1) {
+                                        const dir = getAspectDirection(computeAspectDegrees(dz_dx, dz_dy));
+                                        if (elev >= customMinElev && elev <= customMaxElev && customAspects.has(dir)) {
+                                            match = true;
+                                        }
                                     } else {
-                                        let aspectRad = Math.atan2(-dz_dx, -dz_dy);
-                                        let aspectDeg = aspectRad * (180 / Math.PI);
-                                        if (aspectDeg < 0) aspectDeg += 360;
-                                        aspectDeg = (aspectDeg + 180) % 360;
-                                        color = getColorForAspect(aspectDeg);
+                                        // Flat areas have no aspect; never match
+                                        match = false;
                                     }
-                                }
+                                    if (match) {
+                                        // Orange
+                                        outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
+                                    } else {
+                                        // Transparent
+                                        outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                    }
+                                } else {
+                                    let color;
+                                    if (currentMode === 'slope') {
+                                        color = getColorForSlope(slopeDeg);
+                                    } else { // aspect
+                                        if (slopeDeg < 1) { // Use slope angle to determine if flat
+                                            color = 'rgba(0,0,0,0)';
+                                        } else {
+                                            const aspectDeg = computeAspectDegrees(dz_dx, dz_dy);
+                                            color = getColorForAspect(aspectDeg);
+                                        }
+                                    }
 
-                                const colorValues = color.match(/\d+/g).map(Number);
-                                if(colorValues && colorValues.length >= 3) {
-                                    outputData[i] = colorValues[0];
-                                    outputData[i + 1] = colorValues[1];
-                                    outputData[i + 2] = colorValues[2];
-                                    outputData[i + 3] = 255;
+                                    const colorValues = color.match(/\d+/g).map(Number);
+                                    if(colorValues && colorValues.length >= 3) {
+                                        outputData[i] = colorValues[0];
+                                        outputData[i + 1] = colorValues[1];
+                                        outputData[i + 2] = colorValues[2];
+                                        outputData[i + 3] = 255;
+                                    }
                                 }
                             }
                         }
-                                                } else { // elevation
-                                for (let i = 0; i < data.length; i += 4) {
-                                    const elev = getElevation(data[i], data[i + 1], data[i + 2]);
-                                    if (elev > config.ELEVATION_THRESHOLDS.HIGH) {
-                                        outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
-                                    } else if (elev > config.ELEVATION_THRESHOLDS.MEDIUM) {
-                                        outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
-                                    } else if (elev > config.ELEVATION_THRESHOLDS.LOW) {
-                                        outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
-                                    } else {
-                                        outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
-                                    }
-                                }
+                    } else { // elevation
+                        for (let i = 0; i < data.length; i += 4) {
+                            const elev = getElevation(data[i], data[i + 1], data[i + 2]);
+                            if (elev > config.ELEVATION_THRESHOLDS.HIGH) {
+                                outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
+                            } else if (elev > config.ELEVATION_THRESHOLDS.MEDIUM) {
+                                outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
+                            } else if (elev > config.ELEVATION_THRESHOLDS.LOW) {
+                                outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
+                            } else {
+                                outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
                             }
+                        }
+                    }
                     ctx.putImageData(outputImageData, 0, 0);
                     done(null, tile);
                 } catch (e) {
@@ -247,10 +277,13 @@ function updateLegend() {
     document.getElementById('slope-legend').classList.add('hidden');
     document.getElementById('elevation-legend').classList.add('hidden');
     document.getElementById('aspect-legend').classList.add('hidden');
+    const customControls = document.getElementById('custom-controls');
+    if (customControls) customControls.classList.add('hidden');
 
     if (currentMode === 'slope') document.getElementById('slope-legend').classList.remove('hidden');
     if (currentMode === 'elevation') document.getElementById('elevation-legend').classList.remove('hidden');
     if (currentMode === 'aspect') document.getElementById('aspect-legend').classList.remove('hidden');
+    if (currentMode === 'custom' && customControls) customControls.classList.remove('hidden');
 }
 
 function handleMapClick(e) {
@@ -294,10 +327,7 @@ function handleMapClick(e) {
             let aspectDeg = 0;
             let aspectDir = 'Flat';
             if (slopeDeg > 1) { // Only calculate aspect for non-flat areas
-                const aspectRad = Math.atan2(-dz_dx, -dz_dy);
-                aspectDeg = aspectRad * (180 / Math.PI);
-                if (aspectDeg < 0) aspectDeg += 360;
-                aspectDeg = (aspectDeg + 180) % 360;
+                aspectDeg = computeAspectDegrees(dz_dx, dz_dy);
                 aspectDir = getAspectDirection(aspectDeg);
             }
 
@@ -507,6 +537,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('slope-legend').classList.add('hidden');
                 document.getElementById('elevation-legend').classList.add('hidden');
                 document.getElementById('aspect-legend').classList.add('hidden');
+                const cc1 = document.getElementById('custom-controls'); if (cc1) cc1.classList.add('hidden');
                 document.getElementById('opacity-control').classList.add('hidden');
             });
         }
@@ -543,6 +574,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         document.getElementById('slope-legend').classList.add('hidden');
                         document.getElementById('elevation-legend').classList.add('hidden');
                         document.getElementById('aspect-legend').classList.add('hidden');
+                        const cc2 = document.getElementById('custom-controls'); if (cc2) cc2.classList.add('hidden');
                         document.getElementById('opacity-control').classList.add('hidden');
                     });
                 }
@@ -578,6 +610,39 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // Custom controls listeners
+    const minInput = document.getElementById('custom-min-elev');
+    const maxInput = document.getElementById('custom-max-elev');
+    const aspectCheckboxes = document.querySelectorAll('.aspect-checkbox');
+    function applyCustomStateFromInputs() {
+        const minVal = parseFloat(minInput && minInput.value || '0');
+        const maxVal = parseFloat(maxInput && maxInput.value || '0');
+        if (!isNaN(minVal)) customMinElev = minVal;
+        if (!isNaN(maxVal)) customMaxElev = maxVal;
+        // Ensure range order
+        if (customMinElev > customMaxElev) {
+            const tmp = customMinElev; customMinElev = customMaxElev; customMaxElev = tmp;
+            if (minInput) minInput.value = customMinElev;
+            if (maxInput) maxInput.value = customMaxElev;
+        }
+        customAspects = new Set();
+        aspectCheckboxes.forEach(cb => { if (cb.checked) customAspects.add(cb.value); });
+    }
+    function triggerRedrawIfCustom() { if (currentMode === 'custom' && slopeLayer) slopeLayer.redraw(); }
+    if (minInput) {
+        minInput.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); });
+        minInput.addEventListener('input', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); });
+    }
+    if (maxInput) {
+        maxInput.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); });
+        maxInput.addEventListener('input', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); });
+    }
+    if (aspectCheckboxes && aspectCheckboxes.length) {
+        aspectCheckboxes.forEach(cb => cb.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); }));
+    }
+    // Initialize from defaults
+    applyCustomStateFromInputs();
 
     // Map click handler
     map.on('click', handleMapClick);
