@@ -8,6 +8,7 @@ let currentMode = 'slope'; // 'slope', 'elevation', 'aspect', or 'custom'
 let customMinElev = 0;
 let customMaxElev = 4000;
 let customAspects = new Set(['N','NE','E','SE','S','SW','W','NW']);
+let customSlopeCats = new Set(['FLAT','MODERATE','STEEP','VERY_STEEP','EXTREME']);
 // In-memory avalanche regions store (loaded on page load)
 let avalancheRegions = null;
 let avalancheRegionsLoaded = false;
@@ -187,17 +188,30 @@ function initializeSlopeLayer() {
                                 const slopeDeg = slopeRad * (180 / Math.PI);
 
                                 if (currentMode === 'custom') {
-                                    // Compute aspect only if not flat
+                                    // Determine slope category based on config thresholds
+                                    let slopeCat = 'FLAT';
+                                    if (slopeDeg > config.SLOPE_THRESHOLDS.EXTREME) slopeCat = 'EXTREME';
+                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.VERY_STEEP) slopeCat = 'VERY_STEEP';
+                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.STEEP) slopeCat = 'STEEP';
+                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.MODERATE) slopeCat = 'MODERATE';
+                                    else slopeCat = 'FLAT';
+
                                     let match = false;
-                                    if (slopeDeg > 1) {
-                                        const dir = getAspectDirection(computeAspectDegrees(dz_dx, dz_dy));
-                                        if (elev >= customMinElev && elev <= customMaxElev && customAspects.has(dir)) {
-                                            match = true;
+                                    // Require selected slope category first
+                                    if (customSlopeCats.has(slopeCat)) {
+                                        // Elevation must be within range
+                                        if (elev >= customMinElev && elev <= customMaxElev) {
+                                            if (slopeCat === 'FLAT') {
+                                                // No aspect on flat terrain; accept based on elevation and slope alone
+                                                match = true;
+                                            } else {
+                                                // Non-flat: also require selected aspect direction
+                                                const dir = getAspectDirection(computeAspectDegrees(dz_dx, dz_dy));
+                                                if (customAspects.has(dir)) match = true;
+                                            }
                                         }
-                                    } else {
-                                        // Flat areas have no aspect; never match
-                                        match = false;
                                     }
+
                                     if (match) {
                                         // Orange
                                         outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
@@ -615,6 +629,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const minInput = document.getElementById('custom-min-elev');
     const maxInput = document.getElementById('custom-max-elev');
     const aspectCheckboxes = document.querySelectorAll('.aspect-checkbox');
+    const slopeCheckboxes = document.querySelectorAll('.slope-checkbox');
     function applyCustomStateFromInputs() {
         const minVal = parseFloat(minInput && minInput.value || '0');
         const maxVal = parseFloat(maxInput && maxInput.value || '0');
@@ -628,6 +643,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         customAspects = new Set();
         aspectCheckboxes.forEach(cb => { if (cb.checked) customAspects.add(cb.value); });
+        customSlopeCats = new Set();
+        if (slopeCheckboxes && slopeCheckboxes.length) {
+            slopeCheckboxes.forEach(cb => { if (cb.checked) customSlopeCats.add(cb.value); });
+        }
     }
     function triggerRedrawIfCustom() { if (currentMode === 'custom' && slopeLayer) slopeLayer.redraw(); }
     if (minInput) {
@@ -640,6 +659,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (aspectCheckboxes && aspectCheckboxes.length) {
         aspectCheckboxes.forEach(cb => cb.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); }));
+    }
+    if (slopeCheckboxes && slopeCheckboxes.length) {
+        slopeCheckboxes.forEach(cb => cb.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); }));
     }
     // Initialize from defaults
     applyCustomStateFromInputs();
