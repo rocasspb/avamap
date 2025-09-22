@@ -340,7 +340,7 @@ async function loadAvalancheBulletins() {
     
     try {
         console.log('Loading avalanche bulletin data...');
-        const response = await fetchJsonWithCorsFallback('https://static.avalanche.report/bulletins/latest/EUREGIO_en_CAAMLv6.json');
+        const response = await fetchJsonWithCorsFallback('https://static.avalanche.report/bulletins/2025-03-16/2025-03-16_EUREGIO_en_CAAMLv6.json');
         
         // Create new AvalancheData instance and parse the data
         avalancheData = new AvalancheData();
