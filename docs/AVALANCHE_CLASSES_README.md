@@ -208,7 +208,8 @@ const danger = avalancheData.getDangerLevel('IT-32-TN-01', 2500);
 For browser usage, include the script tag and access classes from the global scope:
 
 ```html
-<script src="avalanche-data-classes.js"></script>
+
+<script src="../avalanche-data-classes.js"></script>
 <script>
     const avalancheData = new AvalancheData();
     // ... rest of your code

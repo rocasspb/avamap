@@ -24,7 +24,8 @@ The parser works with data from the [EUREGIO Avalanche Report](https://static.av
 Include the parser script directly in your HTML:
 
 ```html
-<script src="avalanche-bulletin-parser.js"></script>
+
+<script src="../avalanche-bulletin-parser.js"></script>
 ```
 
 ### Node.js Usage

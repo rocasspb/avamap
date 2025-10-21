@@ -1,18 +1,19 @@
-# Avalanche Map Generator
+# AvaMap
 
-A web-based tool that generates slope maps by analyzing elevation data and calculating terrain steepness in real-time.
+A tool to assess avalanche terrain, based on the slope parameters and regional avalanche forecast.
+
+![Screenshot](docs/img/sample.png) 
+
+**!WIP!**
+
+Vibe-coded with Gemini and Junie.
 
 ## Features
 
 - Interactive map visualization using Leaflet
 - Real-time slope calculation based on elevation data
 - Color-coded slope representation:
-  - Green (0-10°): Flat terrain
-  - Light Green (10-20°): Moderate slopes
-  - Yellow (20-30°): Steep terrain
-  - Orange (30-45°): Very steep terrain
-  - Red (>45°): Extreme slopes
-- **Avalanche Regions Overlay**: Official avalanche warning region boundaries
+- Avalanche Regions Overlay with respective avalanche forecasts(**!static example for now!**)
 - Adjustable overlay opacity
 - Responsive design with Tailwind CSS
 
@@ -43,41 +44,15 @@ The configuration file includes:
 - **Thresholds**: Elevation and slope thresholds for coloring
 - **Display Settings**: Default opacity and tile sizes
 
-### Security Note
-
-- `config.js` is excluded from git (see `.gitignore`)
-- `config.template.js` is included as a reference
-- Never commit your actual API keys to version control
-
 ## How to Use
 
 1. **Setup configuration**: Copy and configure `config.template.js` as described above
-2. **Download regions data**: Run the data parser script to get avalanche region boundaries
 3. **Open the HTML file**: Simply open `avamap.html` in any modern web browser
 4. **Explore the map**: Pan and zoom to see slope calculations and region boundaries
 
 ## Avalanche Regions Data
 
 The application includes an overlay of official avalanche warning regions from [regions.avalanches.org](https://regions.avalanches.org/). To use this feature:
-
-1. **Download the data**:
-   ```bash
-   node parse-avalanche-regions.js
-   ```
-
-2. **Data includes**:
-   - Switzerland (CH): 149 regions
-   - France (FR): 35 regions  
-   - Norway (NO): 24 regions
-   - Italy South Tyrol (IT-32-BZ): 38 regions
-   - Germany Bavaria (DE-BY): 13 regions
-   - And more...
-
-3. **Features**:
-   - Interactive region boundaries with hover effects
-   - Region information popups
-   - Color-coded regions for easy identification
-   - Toggle button to show/hide the overlay
 
 ## Technical Details
 
@@ -86,16 +61,6 @@ The application includes an overlay of official avalanche warning regions from [
 - **Styling**: Tailwind CSS for modern UI
 - **Elevation Data**: MapTiler Terrain-RGB tiles
 - **Slope Calculation**: Real-time pixel analysis of elevation data
-
-## Requirements
-
-- Modern web browser with JavaScript enabled
-- Internet connection for loading map tiles and elevation data
-- MapTiler API key (free tier available)
-
-## Launch
-
-Simply open `avamap.html` in your web browser. No server setup required - this is a client-side application.
 
 ## API Key
 
