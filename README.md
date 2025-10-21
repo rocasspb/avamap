@@ -6,7 +6,7 @@ A tool to assess avalanche terrain, based on the slope parameters and regional a
 
 **!WIP!**
 
-Vibe-coded with Gemini and Junie.
+Vibe-coded and hand-coded with Gemini and Junie.
 
 ## Features
 
