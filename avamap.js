@@ -379,54 +379,33 @@ function handleMapClick(e) {
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(tileImage, 0, 0);
 
-            //const pixelData = calculatePixelData()
-            
-            const pixelDataDx = ctx.getImageData(Math.min(TILE_SIZE - 1, pixelX + 1), pixelY, 1, 1).data;
-            const elev_dx = getElevation(pixelDataDx[0], pixelDataDx[1], pixelDataDx[2]);
-            const pixelDataDy = ctx.getImageData(pixelX, Math.min(TILE_SIZE - 1, pixelY + 1), 1, 1).data;
-            const elev_dy = getElevation(pixelDataDy[0], pixelDataDy[1], pixelDataDy[2]);
-            const pixelData = ctx.getImageData(pixelX, pixelY, 1, 1).data;
-            const elev = getElevation(pixelData[0], pixelData[1], pixelData[2]);
-
-            const resolution = (40075016.7 / (TILE_SIZE * Math.pow(2, zoom))) * Math.cos(lat * Math.PI / 180);
-            const dz_dx = (elev_dx - elev);
-            const dz_dy = (elev_dy - elev);
-
-            const slopeRad = Math.atan(Math.sqrt(dz_dx*dz_dx + dz_dy*dz_dy) / resolution);
-            const slopeDeg = slopeRad * (180 / Math.PI);
-
-            let aspectDeg = 0;
-            let aspectDir = 'Flat';
-            if (slopeDeg > 1) { // Only calculate aspect for non-flat areas
-                aspectDeg = computeAspectDegrees(dz_dx, dz_dy);
-                aspectDir = getAspectDirection(aspectDeg);
-            }
+            const pixelData = calculatePixelData((pixelX + (pixelY * TILE_SIZE)) * 4, TILE_SIZE, TILE_SIZE, ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data, { x: tileX, y: tileY, z: zoom });
 
             // Determine avalanche region for the clicked point
             const regionInfo = findAvalancheRegionForPoint(lat, lng);
             const regionLine = regionInfo ? `<br><strong>Region:</strong> ${regionInfo}` : '';
             
             // Get avalanche data for this location and elevation
-            const avalancheInfo = getAvalancheInfoForLocation(lat, lng, elev);
+            const avalancheInfo = getAvalancheInfoForLocation(lat, lng, pixelData.elev);
             
             let avalancheContent = '';
             if (avalancheInfo && avalancheInfo.dangerLevel) {
                 const dangerEmoji = getDangerLevelEmoji(avalancheInfo.dangerLevel.mainValue);
                 const dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
                 const elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
-                const problems = formatAvalancheProblems(avalancheInfo.problems, aspectDir);
+                const problems = formatAvalancheProblems(avalancheInfo.problems, pixelData.aspectDir);
                 
                 avalancheContent = `
                     <br><br><strong>🚨 Avalanche Information:</strong>
                     <br><strong>Danger Level:</strong> ${dangerEmoji} ${dangerLevel} (${elevationRange})
-                    <br><strong>Elevation:</strong> ${elev.toFixed(0)}m
+                    <br><strong>Elevation:</strong> ${pixelData.elev.toFixed(0)}m
                     <br><strong>Problems:</strong><br>${problems}
                 `;
             } else if (regionInfo) {
                 avalancheContent = `<br><br><strong>🚨 Avalanche Information:</strong><br><em>No current bulletin data available for this region</em>`;
             }
             
-            popup.setContent(`<strong>Slope:</strong> ${slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${aspectDeg.toFixed(0)}° (${aspectDir})${regionLine}${avalancheContent}`);
+            popup.setContent(`<strong>Slope:</strong> ${pixelData.slopeDeg.toFixed(1)}°<br><strong>Aspect:</strong> ${pixelData.aspectDeg.toFixed(0)}° (${pixelData.aspectDir})${regionLine}${avalancheContent}`);
         } catch (err) {
             popup.setContent('Could not calculate data.');
             console.error("Error calculating data on click:", err);
