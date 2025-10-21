@@ -145,6 +145,68 @@ function computeAspectDegrees(dz_dx, dz_dy) {
     return aspectDeg;
 }
 
+function calculatePixelData(i, size_x, size_y, data, coords) {
+    const x = (i / 4) % size_x;
+    const y = Math.floor((i / 4) / size_x);
+    const i_dx = (y * size_x + Math.min(size_x - 1, x + 1)) * 4;
+    const i_dy = (Math.min(size_y - 1, y + 1) * size_x + x) * 4;
+
+    const elev = getElevation(data[i], data[i+1], data[i+2]);
+    const elev_dx = getElevation(data[i_dx], data[i_dx+1], data[i_dx+2]);
+    const elev_dy = getElevation(data[i_dy], data[i_dy+1], data[i_dy+2]);
+
+    const mapCenterLat = (typeof map !== 'undefined' && map && map.getCenter) ? map.getCenter().lat : 0;
+    const resolution = (40075016.7 / (config.TILE_SIZE * Math.pow(2, coords.z))) * Math.cos(mapCenterLat * Math.PI / 180);
+    const dz_dx = (elev_dx - elev);
+    const dz_dy = (elev_dy - elev);
+
+    const slopeRad = resolution ? Math.atan(Math.sqrt(dz_dx*dz_dx + dz_dy*dz_dy) / resolution) : null;
+    const slopeDeg = slopeRad !== null ? (slopeRad * (180 / Math.PI)) : null;
+
+    let slopeCat = 'FLAT';
+    if (slopeDeg !== null) {
+        if (slopeDeg > config.SLOPE_THRESHOLDS.EXTREME) slopeCat = 'EXTREME';
+        else if (slopeDeg > config.SLOPE_THRESHOLDS.VERY_STEEP) slopeCat = 'VERY_STEEP';
+        else if (slopeDeg > config.SLOPE_THRESHOLDS.STEEP) slopeCat = 'STEEP';
+        else if (slopeDeg > config.SLOPE_THRESHOLDS.MODERATE) slopeCat = 'MODERATE';
+    }
+
+    // Aspect
+    const aspectDeg = (typeof computeAspectDegrees === 'function') ? computeAspectDegrees(dz_dx, dz_dy) : null;
+    const aspectDir = (aspectDeg !== null && typeof getAspectDirection === 'function') ? getAspectDirection(aspectDeg) : null;
+
+    // Geo lat/lng if coords are available
+    let lat = null, lng = null;
+    if (coords) {
+        const n = Math.pow(2, coords.z);
+        lng = ((coords.x + (x / size_x)) / n) * 360 - 180;
+        const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * ((coords.y + (y / size_y)) / n))));
+        lat = (latRad * 180) / Math.PI;
+    }
+
+    // Avalanche meta if geo available
+    let regionInfo = null, avalancheInfo = null, dangerLevel = null, elevationRange = null, problems = null;
+    /*if (lat !== null && lng !== null) {
+        regionInfo = findAvalancheRegionForPoint(lat, lng);
+        avalancheInfo = getAvalancheInfoForLocation(lat, lng, elev);
+        if (avalancheInfo && avalancheInfo.dangerLevel) {
+            dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
+            elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
+            problems = avalancheInfo.problems;
+        }
+    }*/
+
+    // Build and return PixelData
+    return new PixelData(
+        x, y,
+        elev,
+        slopeDeg, slopeCat,
+        aspectDeg, aspectDir,
+        lat, lng,
+        regionInfo, avalancheInfo, dangerLevel, elevationRange, problems
+    );
+}
+
 function initializeSlopeLayer() {
     if (slopeLayer) {
         map.removeLayer(slopeLayer);
@@ -171,88 +233,81 @@ function initializeSlopeLayer() {
                     const outputImageData = ctx.createImageData(size.x, size.y);
                     const outputData = outputImageData.data;
 
-                    if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'custom') {
+                    if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'elevation' || currentMode === 'custom') {
                         for (let y = 0; y < size.y; y++) {
                             for (let x = 0; x < size.x; x++) {
                                 const i = (y * size.x + x) * 4;
-                                const i_dx = (y * size.x + Math.min(size.x - 1, x + 1)) * 4;
-                                const i_dy = (Math.min(size.y - 1, y + 1) * size.x + x) * 4;
-                                const elev_dx = getElevation(data[i_dx], data[i_dx+1], data[i_dx+2]);
-                                const elev_dy = getElevation(data[i_dy], data[i_dy+1], data[i_dy+2]);
-                                const elev = getElevation(data[i], data[i+1], data[i+2]);
-                                const resolution = (40075016.7 / (config.TILE_SIZE * Math.pow(2, coords.z))) * Math.cos(map.getCenter().lat * Math.PI / 180);
-                                const dz_dx = (elev_dx - elev);
-                                const dz_dy = (elev_dy - elev);
-                                
-                                const slopeRad = Math.atan(Math.sqrt(dz_dx*dz_dx + dz_dy*dz_dy) / resolution);
-                                const slopeDeg = slopeRad * (180 / Math.PI);
+                                const pixelData = calculatePixelData(i, size.x, size.y, data, coords);
 
-                                if (currentMode === 'custom') {
-                                    // Determine slope category based on config thresholds
-                                    let slopeCat = 'FLAT';
-                                    if (slopeDeg > config.SLOPE_THRESHOLDS.EXTREME) slopeCat = 'EXTREME';
-                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.VERY_STEEP) slopeCat = 'VERY_STEEP';
-                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.STEEP) slopeCat = 'STEEP';
-                                    else if (slopeDeg > config.SLOPE_THRESHOLDS.MODERATE) slopeCat = 'MODERATE';
-                                    else slopeCat = 'FLAT';
-
-                                    let match = false;
-                                    // Require selected slope category first
-                                    if (customSlopeCats.has(slopeCat)) {
-                                        // Elevation must be within range
-                                        if (elev >= customMinElev && elev <= customMaxElev) {
-                                            if (slopeCat === 'FLAT') {
-                                                // No aspect on flat terrain; accept based on elevation and slope alone
-                                                match = true;
-                                            } else {
-                                                // Non-flat: also require selected aspect direction
-                                                const dir = getAspectDirection(computeAspectDegrees(dz_dx, dz_dy));
-                                                if (customAspects.has(dir)) match = true;
+                                switch (currentMode) {
+                                    case 'custom': {
+                                        let match = false;
+                                        // Require selected slope category first
+                                        if (customSlopeCats.has(pixelData.slopeCat)) {
+                                            // Elevation must be within range
+                                            if (pixelData.elev >= customMinElev && pixelData.elev <= customMaxElev) {
+                                                if (pixelData.slopeCat === 'FLAT') {
+                                                    // No aspect on flat terrain; accept based on elevation and slope alone
+                                                    match = true;
+                                                } else {
+                                                    // Non-flat: also require selected aspect direction
+                                                    if (customAspects.has(pixelData.aspectDir)) match = true;
+                                                }
                                             }
                                         }
-                                    }
 
-                                    if (match) {
-                                        // Orange
-                                        outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
-                                    } else {
-                                        // Transparent
-                                        outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                        if (match) {
+                                            // Orange
+                                            outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
+                                        } else {
+                                            // Transparent
+                                            outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                        }
+                                        break;
                                     }
-                                } else {
-                                    let color;
-                                    if (currentMode === 'slope') {
-                                        color = getColorForSlope(slopeDeg);
-                                    } else { // aspect
-                                        if (slopeDeg < 1) { // Use slope angle to determine if flat
+                                    case 'slope': {
+                                        const color = getColorForSlope(pixelData.slopeDeg);
+                                        const colorValues = color.match(/\d+/g).map(Number);
+                                        if(colorValues && colorValues.length >= 3) {
+                                            outputData[i] = colorValues[0];
+                                            outputData[i + 1] = colorValues[1];
+                                            outputData[i + 2] = colorValues[2];
+                                            outputData[i + 3] = 255;
+                                        }
+                                        break;
+                                    }
+                                    case 'aspect': {
+                                        let color;
+                                        if (pixelData.slopeDeg < 1) { // Use slope angle to determine if flat
                                             color = 'rgba(0,0,0,0)';
                                         } else {
-                                            const aspectDeg = computeAspectDegrees(dz_dx, dz_dy);
-                                            color = getColorForAspect(aspectDeg);
+                                            color = getColorForAspect(pixelData.aspectDeg);
                                         }
+                                        const colorValues = color.match(/\d+/g).map(Number);
+                                        if(colorValues && colorValues.length >= 3) {
+                                            outputData[i] = colorValues[0];
+                                            outputData[i + 1] = colorValues[1];
+                                            outputData[i + 2] = colorValues[2];
+                                            outputData[i + 3] = 255;
+                                        }
+                                        break;
                                     }
-
-                                    const colorValues = color.match(/\d+/g).map(Number);
-                                    if(colorValues && colorValues.length >= 3) {
-                                        outputData[i] = colorValues[0];
-                                        outputData[i + 1] = colorValues[1];
-                                        outputData[i + 2] = colorValues[2];
-                                        outputData[i + 3] = 255;
+                                    case 'elevation': {
+                                        const elev = pixelData.elev;
+                                        if (elev > config.ELEVATION_THRESHOLDS.HIGH) {
+                                            outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
+                                        } else if (elev > config.ELEVATION_THRESHOLDS.MEDIUM) {
+                                            outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
+                                        } else if (elev > config.ELEVATION_THRESHOLDS.LOW) {
+                                            outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
+                                        } else {
+                                            outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
+                                        }
+                                        break;
                                     }
+                                    default:
+                                        break;
                                 }
-                            }
-                        }
-                    } else { // elevation
-                        for (let i = 0; i < data.length; i += 4) {
-                            const elev = getElevation(data[i], data[i + 1], data[i + 2]);
-                            if (elev > config.ELEVATION_THRESHOLDS.HIGH) {
-                                outputData[i] = 204; outputData[i + 1] = 50; outputData[i + 2] = 50; outputData[i+3] = 255;
-                            } else if (elev > config.ELEVATION_THRESHOLDS.MEDIUM) {
-                                outputData[i] = 245; outputData[i + 1] = 141; outputData[i + 2] = 17; outputData[i+3] = 255;
-                            } else if (elev > config.ELEVATION_THRESHOLDS.LOW) {
-                                outputData[i] = 231; outputData[i + 1] = 180; outputData[i + 2] = 22; outputData[i+3] = 255;
-                            } else {
-                                outputData[i] = data[i]; outputData[i+1] = data[i+1]; outputData[i+2] = data[i+2]; outputData[i+3] = data[i+3];
                             }
                         }
                     }
@@ -323,6 +378,8 @@ function handleMapClick(e) {
             canvas.height = TILE_SIZE;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             ctx.drawImage(tileImage, 0, 0);
+
+            //const pixelData = calculatePixelData()
             
             const pixelDataDx = ctx.getImageData(Math.min(TILE_SIZE - 1, pixelX + 1), pixelY, 1, 1).data;
             const elev_dx = getElevation(pixelDataDx[0], pixelDataDx[1], pixelDataDx[2]);
@@ -413,15 +470,15 @@ function getAvalancheInfoForLocation(lat, lng, elevation) {
         if (!regionInfo) {
             return null;
         }
-        
+
         // Try to find a matching region in our avalanche data
         const regions = avalancheData.getAllRegions();
-        const matchingRegion = regions.find(region => 
-            region.name === regionInfo || 
+        const matchingRegion = regions.find(region =>
+            region.name === regionInfo ||
             region.regionID.includes(regionInfo) ||
             regionInfo.includes(region.regionID)
         );
-        
+
         if (!matchingRegion) {
             return null;
         }
