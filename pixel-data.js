@@ -22,13 +22,6 @@
             // Geo position
             this.lat = lat ?? null;              // latitude of pixel center
             this.lng = lng ?? null;              // longitude of pixel center
-
-            // Avalanche meta
-            this.regionInfo = regionInfo ?? null;      // region object for point
-            this.avalancheInfo = avalancheInfo ?? null;// bulletin info for location
-            this.dangerLevel = dangerLevel ?? null;    // e.g., LOW, MODERATE, ...
-            this.elevationRange = elevationRange ?? null; // text description
-            this.problems = problems ?? null;          // list of problems (possibly filtered)
         }
     }
 

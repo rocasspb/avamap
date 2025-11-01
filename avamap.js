@@ -184,18 +184,6 @@ function calculatePixelData(i, size_x, size_y, data, coords) {
         lat = (latRad * 180) / Math.PI;
     }
 
-    // Avalanche meta if geo available
-    let regionInfo = null, avalancheInfo = null, dangerLevel = null, elevationRange = null, problems = null;
-    /*if (lat !== null && lng !== null) {
-        regionInfo = findAvalancheRegionForPoint(lat, lng);
-        avalancheInfo = getAvalancheInfoForLocation(lat, lng, elev);
-        if (avalancheInfo && avalancheInfo.dangerLevel) {
-            dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
-            elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
-            problems = avalancheInfo.problems;
-        }
-    }*/
-
     // Build and return PixelData
     return new PixelData(
         x, y,
@@ -203,7 +191,6 @@ function calculatePixelData(i, size_x, size_y, data, coords) {
         slopeDeg, slopeCat,
         aspectDeg, aspectDir,
         lat, lng,
-        regionInfo, avalancheInfo, dangerLevel, elevationRange, problems
     );
 }
 
