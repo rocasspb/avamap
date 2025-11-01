@@ -240,7 +240,7 @@ function initializeSlopeLayer() {
                                 const i = (y * size.x + x) * 4;
                                 const pixelData = calculatePixelData(i, size.x, size.y, data, coords);
                                 if(avaInfo === null)
-                                    avaInfo = getAvalancheInfoForLocation(pixelData.lat, pixelData.lng, pixelData.elev); //TODO we need it not per elevation, but list of all
+                                    avaInfo = getAvalancheInfoForLocation(pixelData.lat, pixelData.lng);
 
                                 switch (currentMode) {
                                     case 'custom': {
@@ -385,7 +385,7 @@ function handleMapClick(e) {
             const pixelData = calculatePixelData((pixelX + (pixelY * TILE_SIZE)) * 4, TILE_SIZE, TILE_SIZE, ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data, { x: tileX, y: tileY, z: zoom });
 
             // Get avalanche data for this location and elevation
-            const avalancheRegion = getAvalancheInfoForLocation(lat, lng, pixelData.elev);
+            const avalancheRegion = getAvalancheInfoForLocation(lat, lng);
             const regionLine = avalancheRegion.regionID ? `<br><strong>Region:</strong> ${(avalancheRegion.regionID)}` : '';
             
             let avalancheContent = '';
@@ -438,23 +438,21 @@ async function loadAvalancheBulletins() {
 }
 
 // --- Helper Functions for Avalanche Data ---
-function getAvalancheInfoForLocation(lat, lng, elevation) {
+function getAvalancheInfoForLocation(lat, lng) {
     if (!avalancheDataLoaded || !avalancheData) {
         return null;
     }
     
     try {
         // Find the region for this location
-        const regionInfo = findAvalancheRegionForPoint(lat, lng); //TODO instead of this, get directly by ID
+        const regionInfo = findAvalancheRegionForPoint(lat, lng);
         if (!regionInfo) {
             return null;
         }
 
         // Try to find a matching region in our avalanche data
         const regions = avalancheData.getAllRegions();
-        const matchingRegion = regions.find(region => region.regionID === regionInfo);
-
-        return matchingRegion;
+        return regions.find(region => region.regionID === regionInfo);
     } catch (err) {
         console.error('Error getting avalanche info:', err);
         return null;
