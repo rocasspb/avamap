@@ -234,10 +234,13 @@ function initializeSlopeLayer() {
                     const outputData = outputImageData.data;
 
                     if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'elevation' || currentMode === 'custom') {
+                        let avaInfo = null;
                         for (let y = 0; y < size.y; y++) {
                             for (let x = 0; x < size.x; x++) {
                                 const i = (y * size.x + x) * 4;
                                 const pixelData = calculatePixelData(i, size.x, size.y, data, coords);
+                                if(avaInfo === null)
+                                    avaInfo = getAvalancheInfoForLocation(pixelData.lat, pixelData.lng, pixelData.elev); //TODO we need it not per elevation, but list of all
 
                                 switch (currentMode) {
                                     case 'custom': {
@@ -381,27 +384,24 @@ function handleMapClick(e) {
 
             const pixelData = calculatePixelData((pixelX + (pixelY * TILE_SIZE)) * 4, TILE_SIZE, TILE_SIZE, ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data, { x: tileX, y: tileY, z: zoom });
 
-            // Determine avalanche region for the clicked point
-            const regionInfo = findAvalancheRegionForPoint(lat, lng);
-            const regionLine = regionInfo ? `<br><strong>Region:</strong> ${regionInfo}` : '';
-            
             // Get avalanche data for this location and elevation
-            const avalancheInfo = getAvalancheInfoForLocation(lat, lng, pixelData.elev);
+            const avalancheRegion = getAvalancheInfoForLocation(lat, lng, pixelData.elev);
+            const regionLine = avalancheRegion.regionID ? `<br><strong>Region:</strong> ${(avalancheRegion.regionID)}` : '';
             
             let avalancheContent = '';
-            if (avalancheInfo && avalancheInfo.dangerLevel) {
-                const dangerEmoji = getDangerLevelEmoji(avalancheInfo.dangerLevel.mainValue);
-                const dangerLevel = avalancheInfo.dangerLevel.mainValue.toUpperCase();
-                const elevationRange = avalancheInfo.dangerLevel.elevation.getDescription();
-                const problems = formatAvalancheProblems(avalancheInfo.problems, pixelData.aspectDir);
+            if (avalancheRegion ) {
+                const dangerLevel = avalancheRegion.getHighestDangerLevel()
+                const dangerEmoji = getDangerLevelEmoji(dangerLevel.mainValue);
+                const elevationRange = dangerLevel.elevation.getDescription();
+                const problems = formatAvalancheProblems(avalancheRegion.problems, pixelData.aspectDir);
                 
                 avalancheContent = `
                     <br><br><strong>🚨 Avalanche Information:</strong>
-                    <br><strong>Danger Level:</strong> ${dangerEmoji} ${dangerLevel} (${elevationRange})
+                    <br><strong>Danger Level:</strong> ${dangerEmoji} ${dangerLevel.mainValue} (${elevationRange})
                     <br><strong>Elevation:</strong> ${pixelData.elev.toFixed(0)}m
                     <br><strong>Problems:</strong><br>${problems}
                 `;
-            } else if (regionInfo) {
+            } else {
                 avalancheContent = `<br><br><strong>🚨 Avalanche Information:</strong><br><em>No current bulletin data available for this region</em>`;
             }
             
@@ -445,33 +445,16 @@ function getAvalancheInfoForLocation(lat, lng, elevation) {
     
     try {
         // Find the region for this location
-        const regionInfo = findAvalancheRegionForPoint(lat, lng);
+        const regionInfo = findAvalancheRegionForPoint(lat, lng); //TODO instead of this, get directly by ID
         if (!regionInfo) {
             return null;
         }
 
         // Try to find a matching region in our avalanche data
         const regions = avalancheData.getAllRegions();
-        const matchingRegion = regions.find(region =>
-            region.name === regionInfo ||
-            region.regionID.includes(regionInfo) ||
-            regionInfo.includes(region.regionID)
-        );
+        const matchingRegion = regions.find(region => region.regionID === regionInfo);
 
-        if (!matchingRegion) {
-            return null;
-        }
-        
-        // Get danger level and problems for this elevation
-        const dangerLevel = avalancheData.getDangerLevel(matchingRegion.regionID, elevation);
-        const problems = avalancheData.getProblems(matchingRegion.regionID, elevation);
-        
-        return {
-            region: matchingRegion,
-            dangerLevel: dangerLevel,
-            problems: problems,
-            elevation: elevation
-        };
+        return matchingRegion;
     } catch (err) {
         console.error('Error getting avalanche info:', err);
         return null;
@@ -769,7 +752,7 @@ function findAvalancheRegionForPoint(lat, lng) {
 
 function getRegionLabel(feature) {
     const props = feature && feature.properties ? feature.properties : {};
-    return props.name || props.id || props.region_code || 'Region';
+    return props.id;
 }
 
 // coordinates: Polygon as array of linear rings [[ [lng,lat], ... ]]
