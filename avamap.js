@@ -9,6 +9,7 @@ let customMinElev = 0;
 let customMaxElev = 4000;
 let customAspects = new Set(['N','NE','E','SE','S','SW','W','NW']);
 let customSlopeCats = new Set(['FLAT','MODERATE','STEEP','VERY_STEEP','EXTREME']);
+let customRespectForecast = false;
 // In-memory avalanche regions store (loaded on page load)
 let avalancheRegions = null;
 let avalancheRegionsLoaded = false;
@@ -221,37 +222,65 @@ function initializeSlopeLayer() {
                     const outputData = outputImageData.data;
 
                     if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'elevation' || currentMode === 'custom') {
-                        let avaInfo = null;
+                        const midPixelData = calculatePixelData(size.y * size.x * 2 + size.x * 2 , size.x, size.y, data, coords);
+                        let avaInfo = getAvalancheInfoForLocation(midPixelData.lat, midPixelData.lng);
                         for (let y = 0; y < size.y; y++) {
                             for (let x = 0; x < size.x; x++) {
                                 const i = (y * size.x + x) * 4;
                                 const pixelData = calculatePixelData(i, size.x, size.y, data, coords);
-                                if(avaInfo === null)
-                                    avaInfo = getAvalancheInfoForLocation(pixelData.lat, pixelData.lng);
 
                                 switch (currentMode) {
                                     case 'custom': {
-                                        let match = false;
-                                        // Require selected slope category first
-                                        if (customSlopeCats.has(pixelData.slopeCat)) {
-                                            // Elevation must be within range
-                                            if (pixelData.elev >= customMinElev && pixelData.elev <= customMaxElev) {
-                                                if (pixelData.slopeCat === 'FLAT') {
-                                                    // No aspect on flat terrain; accept based on elevation and slope alone
-                                                    match = true;
-                                                } else {
-                                                    // Non-flat: also require selected aspect direction
-                                                    if (customAspects.has(pixelData.aspectDir)) match = true;
+                                        // If respecting forecast, override custom filters with forecast-based coloring
+                                        if (customRespectForecast) {
+                                            let forecastMatch = false;
+                                            if (avaInfo && avaInfo.problems.length > 0) {
+                                                const asp = (pixelData.aspectDir || '').toUpperCase();
+                                                // Match if any problem mentions this aspect AND elevation range contains this pixel elevation
+                                                for (let pIdx = 0; pIdx < avaInfo.problems.length; pIdx++) {
+                                                    const p = avaInfo.problems[pIdx];
+                                                    if (p.aspects.length === 0) continue; // require aspect to be mentioned
+                                                        const aspectsUpper = p.aspects.map(a => String(a).toUpperCase());
+                                                    if (asp && aspectsUpper.includes(asp) && p.appliesToElevation(pixelData.elev)) {
+                                                        forecastMatch = true;
+                                                        break;
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        if (match) {
-                                            // Orange
-                                            outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
+                                            if (forecastMatch) {
+                                                // Color based on danger level at this elevation (fallback to highest)
+                                                const rating = avaInfo.getDangerLevelAtElevation(pixelData.elev);
+                                                const rgba = getRGBAForDangerLevel(rating.mainValue);
+                                                outputData[i] = rgba[0]; outputData[i+1] = rgba[1]; outputData[i+2] = rgba[2]; outputData[i+3] = rgba[3];
+                                            } else {
+                                                // Transparent if not covered by any mentioned problem
+                                                outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                            }
                                         } else {
-                                            // Transparent
-                                            outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                            // Original custom filter behavior
+                                            let match = false;
+                                            // Require selected slope category first
+                                            if (customSlopeCats.has(pixelData.slopeCat)) {
+                                                // Elevation must be within range
+                                                if (pixelData.elev >= customMinElev && pixelData.elev <= customMaxElev) {
+                                                    if (pixelData.slopeCat === 'FLAT') {
+                                                        // No aspect on flat terrain; accept based on elevation and slope alone
+                                                        match = true;
+                                                    } else {
+                                                        // Non-flat: also require selected aspect direction
+                                                        if (customAspects.has(pixelData.aspectDir)) match = true;
+                                                    }
+                                                }
+                                            }
+
+                                            if (match) {
+                                                // Orange
+                                                outputData[i] = 255; outputData[i+1] = 165; outputData[i+2] = 0; outputData[i+3] = 255;
+                                            } else {
+                                                // Transparent
+                                                outputData[i] = 0; outputData[i+1] = 0; outputData[i+2] = 0; outputData[i+3] = 0;
+                                            }
                                         }
                                         break;
                                     }
@@ -373,7 +402,7 @@ function handleMapClick(e) {
 
             // Get avalanche data for this location and elevation
             const avalancheRegion = getAvalancheInfoForLocation(lat, lng);
-            const regionLine = avalancheRegion.regionID ? `<br><strong>Region:</strong> ${(avalancheRegion.regionID)}` : '';
+            const regionLine = avalancheRegion && avalancheRegion.regionID ? `<br><strong>Region:</strong> ${(avalancheRegion.regionID)}` : '';
             
             let avalancheContent = '';
             if (avalancheRegion ) {
@@ -480,6 +509,25 @@ function getDangerLevelEmoji(level) {
         'extreme': '⚫'
     };
     return emojiMap[level] || '❓';
+}
+
+// Map avalanche danger levels to RGBA color [r,g,b,a]
+function getRGBAForDangerLevel(level) {
+    // Accept string level or numeric (1-5)
+    let key = level;
+    if (typeof level === 'number') {
+        const mapNumToStr = { 1: 'low', 2: 'moderate', 3: 'considerable', 4: 'high', 5: 'extreme' };
+        key = mapNumToStr[level] || null;
+    }
+    if (typeof key === 'string') key = key.toLowerCase();
+    switch (key) {
+        case 'low': return [45, 201, 55, 255];          // green
+        case 'moderate': return [231, 180, 22, 255];    // yellow-ish (consistent with slope palette)
+        case 'considerable': return [245, 141, 17, 255];// orange
+        case 'high': return [204, 50, 50, 255];         // red
+        case 'extreme': return [0, 0, 0, 255];          // black
+        default: return [0, 0, 0, 0];                   // transparent if unknown
+    }
 }
 
 // --- Avalanche Regions (in-memory) ---
@@ -634,6 +682,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const maxInput = document.getElementById('custom-max-elev');
     const aspectCheckboxes = document.querySelectorAll('.aspect-checkbox');
     const slopeCheckboxes = document.querySelectorAll('.slope-checkbox');
+    const respectForecastCb = document.getElementById('custom-respect-forecast');
     function applyCustomStateFromInputs() {
         const minVal = parseFloat(minInput && minInput.value || '0');
         const maxVal = parseFloat(maxInput && maxInput.value || '0');
@@ -651,6 +700,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (slopeCheckboxes && slopeCheckboxes.length) {
             slopeCheckboxes.forEach(cb => { if (cb.checked) customSlopeCats.add(cb.value); });
         }
+        if (respectForecastCb) {
+            customRespectForecast = !!respectForecastCb.checked;
+        }
     }
     function triggerRedrawIfCustom() { if (currentMode === 'custom' && slopeLayer) slopeLayer.redraw(); }
     if (minInput) {
@@ -667,7 +719,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (slopeCheckboxes && slopeCheckboxes.length) {
         slopeCheckboxes.forEach(cb => cb.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); }));
     }
+    if (respectForecastCb) {
+        respectForecastCb.addEventListener('change', () => { applyCustomStateFromInputs(); triggerRedrawIfCustom(); });
+    }
     // Initialize from defaults
+    if (respectForecastCb) respectForecastCb.checked = !!customRespectForecast;
     applyCustomStateFromInputs();
 
     // Map click handler
