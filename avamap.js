@@ -10,73 +10,6 @@ let customMaxElev = 4000;
 let customAspects = new Set(['N','NE','E','SE','S','SW','W','NW']);
 let customSlopeCats = new Set(['FLAT','MODERATE','STEEP','VERY_STEEP','EXTREME']);
 let customRespectForecast = false;
-// In-memory avalanche regions store (loaded on page load)
-let avalancheRegions = null;
-let avalancheRegionsLoaded = false;
-// Avalanche bulletin data
-let avalancheData = null;
-let avalancheDataLoaded = false;
-const AVALANCHE_REGIONS_BASE_URL = 'https://regions.avalanches.org';
-const AVALANCHE_REGIONS_LIST = [
-    'AD', // Andorra
-    'AT-01', // Austria
-    'AT-02', // Austria
-    'AT-03', // Austria
-    'AT-04', // Austria
-    'AT-05', // Austria
-    'AT-06', // Austria
-    'AT-07', // Austria
-    'AT-08', // Austria
-    'CH', // Switzerland
-    'CZ', // Chech Rep.
-    'DE-BY', // Germany Bavaria
-    'ES-CT', // Spain Catalonia
-    'ES-CT-L', // Spain Catalonia Lleida
-    'ES', // Spain
-    'FI', // Finland   
-    'FR', // France
-    'GB', // Great Britain
-    'IS', // Iceland
-    'IT-21', // Italy
-    'IT-23', // Italy
-    'IT-25', // Italy
-    'IT-32-BZ', // Italy South Tyrol
-    'IT-32-TN', // Italy Trentino
-    'IT-34', // Italy
-    'IT-36', // Italy
-    'IT-57', // Italy
-    'IT-MeteoMont', // Italy
-    'NO', // Norway
-    'PL', // Poland
-    'PL-12', // Poland Silesia
-    'RO', // Romania
-    'SE', // Sweden
-    'SI', // Slovenia
-    'SK', // Slovakia
-    'UA', // Ukraine
-    'CA', // Canada
-    'US', // United States
-    'NZ'  // New Zealand
-];
-
-async function fetchJsonWithCorsFallback(url) {
-    try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
-    } catch (err) {
-        // Try a simple CORS proxy fallback
-        try {
-            const proxyUrl = `https://cors.isomorphic-git.org/${url}`;
-            const res2 = await fetch(proxyUrl);
-            if (!res2.ok) throw new Error(`Proxy HTTP ${res2.status}`);
-            return await res2.json();
-        } catch (proxyErr) {
-            console.warn('CORS fallback failed for', url, proxyErr.message || proxyErr);
-            throw err;
-        }
-    }
-}
 
 // --- Map Initialization ---
 map = L.map('map').setView(config.DEFAULT_CENTER, config.DEFAULT_ZOOM);
@@ -85,10 +18,6 @@ const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.pn
 }).addTo(map);
 
 // --- Core Functions ---
-function getElevation(r, g, b) {
-    return -10000 + ((r * 256 * 256 + g * 256 + b) * 0.1);
-}
-
 function getColorForSlope(slope) {
     if (slope > config.SLOPE_THRESHOLDS.EXTREME) return 'rgba(204, 50, 50, 0.7)';
     if (slope > config.SLOPE_THRESHOLDS.VERY_STEEP) return 'rgba(245, 141, 17, 0.7)';
@@ -126,75 +55,6 @@ function getColorForAspect(angle) {
     return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, 0.7)`;
 }
 
-function getAspectDirection(degrees) {
-    if (degrees > 337.5 || degrees <= 22.5) return 'N';
-    if (degrees > 22.5 && degrees <= 67.5) return 'NW';
-    if (degrees > 67.5 && degrees <= 112.5) return 'W';
-    if (degrees > 112.5 && degrees <= 157.5) return 'SW';
-    if (degrees > 157.5 && degrees <= 202.5) return 'S';
-    if (degrees > 202.5 && degrees <= 247.5) return 'SE';
-    if (degrees > 247.5 && degrees <= 292.5) return 'E';
-    if (degrees > 292.5 && degrees <= 337.5) return 'NE';
-    return '';
-}
-
-function computeAspectDegrees(dz_dx, dz_dy) {
-    const aspectRad = Math.atan2(-dz_dx, -dz_dy);
-    let aspectDeg = aspectRad * (180 / Math.PI);
-    if (aspectDeg < 0) aspectDeg += 360;
-    aspectDeg = (aspectDeg + 180) % 360;
-    return aspectDeg;
-}
-
-function calculatePixelData(i, size_x, size_y, data, coords) {
-    const x = (i / 4) % size_x;
-    const y = Math.floor((i / 4) / size_x);
-    const i_dx = (y * size_x + Math.min(size_x - 1, x + 1)) * 4;
-    const i_dy = (Math.min(size_y - 1, y + 1) * size_x + x) * 4;
-
-    const elev = getElevation(data[i], data[i+1], data[i+2]);
-    const elev_dx = getElevation(data[i_dx], data[i_dx+1], data[i_dx+2]);
-    const elev_dy = getElevation(data[i_dy], data[i_dy+1], data[i_dy+2]);
-
-    const mapCenterLat = (typeof map !== 'undefined' && map && map.getCenter) ? map.getCenter().lat : 0;
-    const resolution = (40075016.7 / (config.TILE_SIZE * Math.pow(2, coords.z))) * Math.cos(mapCenterLat * Math.PI / 180);
-    const dz_dx = (elev_dx - elev);
-    const dz_dy = (elev_dy - elev);
-
-    const slopeRad = resolution ? Math.atan(Math.sqrt(dz_dx*dz_dx + dz_dy*dz_dy) / resolution) : null;
-    const slopeDeg = slopeRad !== null ? (slopeRad * (180 / Math.PI)) : null;
-
-    let slopeCat = 'FLAT';
-    if (slopeDeg !== null) {
-        if (slopeDeg > config.SLOPE_THRESHOLDS.EXTREME) slopeCat = 'EXTREME';
-        else if (slopeDeg > config.SLOPE_THRESHOLDS.VERY_STEEP) slopeCat = 'VERY_STEEP';
-        else if (slopeDeg > config.SLOPE_THRESHOLDS.STEEP) slopeCat = 'STEEP';
-        else if (slopeDeg > config.SLOPE_THRESHOLDS.MODERATE) slopeCat = 'MODERATE';
-    }
-
-    // Aspect
-    const aspectDeg = (typeof computeAspectDegrees === 'function') ? computeAspectDegrees(dz_dx, dz_dy) : null;
-    const aspectDir = (aspectDeg !== null && typeof getAspectDirection === 'function') ? getAspectDirection(aspectDeg) : null;
-
-    // Geo lat/lng if coords are available
-    let lat = null, lng = null;
-    if (coords) {
-        const n = Math.pow(2, coords.z);
-        lng = ((coords.x + (x / size_x)) / n) * 360 - 180;
-        const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * ((coords.y + (y / size_y)) / n))));
-        lat = (latRad * 180) / Math.PI;
-    }
-
-    // Build and return PixelData
-    return new PixelData(
-        x, y,
-        elev,
-        slopeDeg, slopeCat,
-        aspectDeg, aspectDir,
-        lat, lng,
-    );
-}
-
 function initializeSlopeLayer() {
     if (slopeLayer) {
         map.removeLayer(slopeLayer);
@@ -223,7 +83,7 @@ function initializeSlopeLayer() {
 
                     if (currentMode === 'slope' || currentMode === 'aspect' || currentMode === 'elevation' || currentMode === 'custom') {
                         const midPixelData = calculatePixelData(size.y * size.x * 2 + size.x * 2 , size.x, size.y, data, coords);
-                        let avaInfo = getAvalancheInfoForLocation(midPixelData.lat, midPixelData.lng);
+                        let avaInfo = AvalancheDataService.getAvalancheInfoForLocation(midPixelData.lat, midPixelData.lng);
                         for (let y = 0; y < size.y; y++) {
                             for (let x = 0; x < size.x; x++) {
                                 const i = (y * size.x + x) * 4;
@@ -401,7 +261,7 @@ function handleMapClick(e) {
             const pixelData = calculatePixelData((pixelX + (pixelY * TILE_SIZE)) * 4, TILE_SIZE, TILE_SIZE, ctx.getImageData(0, 0, TILE_SIZE, TILE_SIZE).data, { x: tileX, y: tileY, z: zoom });
 
             // Get avalanche data for this location and elevation
-            const avalancheRegion = getAvalancheInfoForLocation(lat, lng);
+            const avalancheRegion = AvalancheDataService.getAvalancheInfoForLocation(lat, lng);
             const regionLine = avalancheRegion && avalancheRegion.regionID ? `<br><strong>Region:</strong> ${(avalancheRegion.regionID)}` : '';
             
             let avalancheContent = '';
@@ -430,50 +290,7 @@ function handleMapClick(e) {
     tileImage.onerror = () => popup.setContent('Failed to load elevation data.');
 }
 
-// --- Avalanche Bulletin Data Loading ---
-async function loadAvalancheBulletins() {
-    if (avalancheDataLoaded) return avalancheData;
-    
-    try {
-        console.log('Loading avalanche bulletin data...');
-        const response = await fetchJsonWithCorsFallback('https://static.avalanche.report/bulletins/latest/EUREGIO_de_CAAMLv6.json');
-        
-        // Create new AvalancheData instance and parse the data
-        avalancheData = new AvalancheData();
-        avalancheData.parse(response);
-        
-        avalancheDataLoaded = true;
-        console.log(`✅ Loaded avalanche bulletin data: ${avalancheData.summary.totalBulletins} bulletins, ${avalancheData.summary.totalRegions} regions`);
-        
-        return avalancheData;
-    } catch (err) {
-        console.error('Error loading avalanche bulletins:', err);
-        avalancheDataLoaded = false;
-        return null;
-    }
-}
-
-// --- Helper Functions for Avalanche Data ---
-function getAvalancheInfoForLocation(lat, lng) {
-    if (!avalancheDataLoaded || !avalancheData) {
-        return null;
-    }
-    
-    try {
-        // Find the region for this location
-        const regionInfo = findAvalancheRegionForPoint(lat, lng);
-        if (!regionInfo) {
-            return null;
-        }
-
-        // Try to find a matching region in our avalanche data
-        const regions = avalancheData.getAllRegions();
-        return regions.find(region => region.regionID === regionInfo);
-    } catch (err) {
-        console.error('Error getting avalanche info:', err);
-        return null;
-    }
-}
+// --- Avalanche Bulletin Data: delegated to AvalancheDataService ---
 
 function formatAvalancheProblems(problems, currentAspect = null) {
     if (!problems || problems.length === 0) {
@@ -530,52 +347,11 @@ function getRGBAForDangerLevel(level) {
     }
 }
 
-// --- Avalanche Regions (in-memory) ---
-async function loadAvalancheRegionsIntoMemory() {
-    if (avalancheRegionsLoaded) return avalancheRegions;
-    try {
-        const fetches = AVALANCHE_REGIONS_LIST.map(async (code) => {
-            const url = `${AVALANCHE_REGIONS_BASE_URL}/micro-regions/${code}_micro-regions.geojson.json`;
-            try {
-                const fc = await fetchJsonWithCorsFallback(url);
-                return { code, fc };
-            } catch (err) {
-                console.warn(`Failed to load regions for ${code}:`, err.message);
-                return null;
-            }
-        });
-        const results = await Promise.all(fetches);
-        const allFeatures = [];
-        for (const item of results) {
-            if (item && item.fc && Array.isArray(item.fc.features)) {
-                const code = item.code;
-                for (const feature of item.fc.features) {
-                    if (feature && feature.properties) {
-                        feature.properties.region_code = feature.properties.region_code || code;
-                        feature.properties.source = 'regions.avalanches.org';
-                    }
-                    allFeatures.push(feature);
-                }
-            }
-        }
-        avalancheRegions = { type: 'FeatureCollection', features: allFeatures };
-        avalancheRegionsLoaded = true;
-        console.log(`Loaded avalanche regions in memory: ${allFeatures.length} features`);
-        if (!allFeatures.length) {
-            console.warn('No avalanche region features were loaded. Check network/CORS.');
-        }
-        return avalancheRegions;
-    } catch (err) {
-        console.error('Error loading avalanche regions:', err);
-        throw err;
-    }
-}
-
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function() {
     // Kick off background load of avalanche regions and bulletins into memory
-    loadAvalancheRegionsIntoMemory().catch(() => {});
-    loadAvalancheBulletins().catch(() => {});
+    AvalancheDataService.loadAvalancheRegionsIntoMemory().catch(() => {});
+    AvalancheDataService.loadAvalancheBulletins().catch(() => {});
     // Check if API key is available from config
     if (MAPI_KEY && MAPI_KEY !== 'YOUR_API_KEY_HERE') {
         // API key is available, hide the input section and initialize the layer
@@ -738,8 +514,9 @@ function ensureRegionLayer() {
     if (!regionLayer) {
         // Ensure regions are loaded
         const useRegions = () => {
-            if (!avalancheRegions || !Array.isArray(avalancheRegions.features)) return;
-            regionLayer = L.geoJSON(avalancheRegions, {
+            const regions = AvalancheDataService.avalancheRegions;
+            if (!regions || !Array.isArray(regions.features)) return;
+            regionLayer = L.geoJSON(regions, {
                 style: function () {
                     return {
                         color: '#ef4444', // red-500 for visibility
@@ -751,72 +528,14 @@ function ensureRegionLayer() {
             });
             map.addLayer(regionLayer);
             try { regionLayer.bringToFront && regionLayer.bringToFront(); } catch (_) {}
-            if (!avalancheRegions.features.length) {
+            if (!regions.features.length) {
                 console.warn('Region layer added but there are zero features to display.');
             }
         };
-        if (avalancheRegionsLoaded) {
+        if (AvalancheDataService.avalancheRegionsLoaded) {
             useRegions();
         } else {
-            loadAvalancheRegionsIntoMemory().then(useRegions).catch(() => {});
+            AvalancheDataService.loadAvalancheRegionsIntoMemory().then(useRegions).catch(() => {});
         }
     }
-}
-
-// --- Geo helpers: point-in-polygon for GeoJSON ---
-function findAvalancheRegionForPoint(lat, lng) {
-    try {
-        if (!avalancheRegionsLoaded || !avalancheRegions || !Array.isArray(avalancheRegions.features)) return null;
-        const point = [lng, lat]; // GeoJSON uses [lng, lat]
-        for (let i = 0; i < avalancheRegions.features.length; i++) {
-            const f = avalancheRegions.features[i];
-            if (!f || !f.geometry) continue;
-            const { type, coordinates } = f.geometry;
-            if (type === 'Polygon') {
-                if (polygonContainsPoint(point, coordinates)) {
-                    return getRegionLabel(f);
-                }
-            } else if (type === 'MultiPolygon') {
-                for (let p = 0; p < coordinates.length; p++) {
-                    if (polygonContainsPoint(point, coordinates[p])) {
-                        return getRegionLabel(f);
-                    }
-                }
-            }
-        }
-        return null;
-    } catch (err) {
-        console.warn('Region lookup failed:', err.message || err);
-        return null;
-    }
-}
-
-function getRegionLabel(feature) {
-    const props = feature && feature.properties ? feature.properties : {};
-    return props.id;
-}
-
-// coordinates: Polygon as array of linear rings [[ [lng,lat], ... ]]
-function polygonContainsPoint(point, polygon) {
-    if (!polygon || !polygon.length) return false;
-    const outer = polygon[0];
-    if (!ringContainsPoint(point, outer)) return false;
-    // if inside outer, ensure not inside any hole
-    for (let i = 1; i < polygon.length; i++) {
-        if (ringContainsPoint(point, polygon[i])) return false;
-    }
-    return true;
-}
-
-// Classic ray casting on ring (array of [lng,lat])
-function ringContainsPoint(point, ring) {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const xi = ring[i][0], yi = ring[i][1];
-        const xj = ring[j][0], yj = ring[j][1];
-        const intersect = ((yi > point[1]) !== (yj > point[1])) &&
-            (point[0] < (xj - xi) * (point[1] - yi) / ((yj - yi) || 1e-12) + xi);
-        if (intersect) inside = !inside;
-    }
-    return inside;
 }
