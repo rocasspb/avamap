@@ -1,4 +1,5 @@
-# AvaMap
+# AvaMap - postponed
+See the current iteration [here](https://github.com/rocasspb/ava_map)
 
 A tool to assess avalanche terrain, based on the slope parameters and regional avalanche forecast.
 
